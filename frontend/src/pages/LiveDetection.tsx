@@ -3,7 +3,7 @@ import {
   Mic, Square, Pause, Play, RotateCcw,
   Wifi, WifiOff, AlertCircle, ShieldCheck, ShieldAlert, Activity,
 } from 'lucide-react';
-import { WS_BASE_URL, API_BASE_URL } from '../services/api';
+import { WS_BASE_URL, API_BASE_URL, fetchHealth } from '../services/api';
 
 function encodeWAV(samples: Float32Array, sampleRate: number): Blob {
   const byteCount = samples.length * 2;
@@ -28,6 +28,7 @@ export const LiveDetection: React.FC = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
+  const [apiConnected, setApiConnected] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [frameCount, setFrameCount] = useState(0);
@@ -86,6 +87,18 @@ export const LiveDetection: React.FC = () => {
     return () => { cleanup(); wsRef.current?.close(); };
   }, [connectWebSocket]);
 
+  useEffect(() => {
+    let active = true;
+    const checkApi = () => {
+      fetchHealth().then((health) => {
+        if (active) setApiConnected(health.ai_engine_online);
+      });
+    };
+    checkApi();
+    const interval = window.setInterval(checkApi, 15000);
+    return () => { active = false; window.clearInterval(interval); };
+  }, []);
+
   const applyResult = (data: any, latency: number) => {
     const auth = data.authenticity || {};
     const cls = (auth.classification || 'REAL') as any;
@@ -117,12 +130,24 @@ export const LiveDetection: React.FC = () => {
       fd.append('file', wav, 'live_chunk.wav');
       fd.append('language', 'auto');
       const res = await fetch(`${API_BASE_URL}/api/analyze`, { method: 'POST', body: fd });
-      if (res.ok) { applyResult(await res.json(), Math.round(performance.now() - t0)); }
-      else { setIsAnalyzing(false); setStatusText(`HTTP ${res.status} error`); }
-    } catch {
+      if (!res.ok) {
+        let detail = `HTTP ${res.status}`;
+        try {
+          const body = await res.json();
+          detail = body.detail || body.error || detail;
+        } catch {
+          // The server may return a non-JSON error page.
+        }
+        throw new Error(detail);
+      }
+      applyResult(await res.json(), Math.round(performance.now() - t0));
+      setApiConnected(true);
+      setErrorMsg('');
+    } catch (error) {
       setIsAnalyzing(false);
-      setStatusText('Backend offline');
-      setErrorMsg('Cannot reach backend at localhost:8000. Run: .venv\\Scripts\\python -m uvicorn backend.app:app --reload');
+      setApiConnected(false);
+      setStatusText('Analysis request failed');
+      setErrorMsg(`Could not analyze this audio window at ${API_BASE_URL || window.location.origin}/api/analyze. ${error instanceof Error ? error.message : 'Check the backend URL and deployment logs.'}`);
     }
   };
 
@@ -254,9 +279,8 @@ export const LiveDetection: React.FC = () => {
       <div style={{ background: 'rgba(56,189,248,0.08)', border: '1px solid rgba(56,189,248,0.25)', color: 'var(--accent-cyan)', padding: '12px 20px', borderRadius: '10px', fontSize: '0.84rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
         <AlertCircle size={16} />
         <span>
-          <strong>HOW IT WORKS:</strong> Mic audio is captured as raw PCM, encoded as WAV, and sent to the AI engine every 3s.
-          Backend must be running at{' '}
-          <code style={{ background: 'rgba(255,255,255,0.1)', padding: '1px 6px', borderRadius: '4px' }}>localhost:8000</code>.
+          <strong>HOW IT WORKS:</strong> Mic audio is captured as raw PCM, encoded as WAV, and sent to the VoiceGuard API every 3s.
+          Configure <code style={{ background: 'rgba(255,255,255,0.1)', padding: '1px 6px', borderRadius: '4px' }}>VITE_API_URL</code> with your deployed backend origin.
         </span>
       </div>
 
@@ -281,7 +305,7 @@ export const LiveDetection: React.FC = () => {
           <div style={{ fontSize: '0.77rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--bg-tertiary)', padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
             {wsConnected ? <Wifi size={13} color="var(--accent-emerald)" /> : <WifiOff size={13} />}
             WS: <strong style={{ color: wsConnected ? 'var(--accent-emerald)' : '#555' }}>{wsConnected ? 'LIVE' : 'OFF'}</strong>
-            &nbsp;|&nbsp; HTTP: <strong style={{ color: 'var(--accent-cyan)' }}>ACTIVE</strong>
+            &nbsp;|&nbsp; API: <strong style={{ color: apiConnected ? 'var(--accent-emerald)' : 'var(--accent-rose)' }}>{apiConnected ? 'ONLINE' : 'OFFLINE'}</strong>
           </div>
 
           {isRecording ? (
@@ -319,7 +343,7 @@ export const LiveDetection: React.FC = () => {
             <strong>Error: </strong>{errorMsg}
             <br />
             <span style={{ fontSize: '0.8rem', opacity: 0.8 }}>
-              Start backend: <code style={{ background: 'rgba(255,255,255,0.1)', padding: '1px 6px', borderRadius: '4px' }}>.venv\Scripts\python -m uvicorn backend.app:app --reload</code>
+              Confirm the backend is deployed and <code style={{ background: 'rgba(255,255,255,0.1)', padding: '1px 6px', borderRadius: '4px' }}>VITE_API_URL</code> points to it.
             </span>
           </div>
         </div>

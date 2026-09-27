@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { LandingPage } from './pages/LandingPage';
@@ -12,9 +12,10 @@ import { Analytics } from './pages/Analytics';
 import { AIModels } from './pages/AIModels';
 import { Settings } from './pages/Settings';
 import { AttackSimulation } from './pages/AttackSimulation';
-import type { User } from './services/api';
+import { fetchHealth, type User } from './services/api';
 
 export function App() {
+  const [apiOnline, setApiOnline] = useState(false);
   const [currentView, setCurrentView] = useState<string>('live-detection');
   const [pendingTargetView, setPendingTargetView] = useState<string>('live-detection');
   
@@ -25,6 +26,18 @@ export function App() {
     email: 'demo@voiceguard.ai',
     role: 'analyst',
   });
+
+  useEffect(() => {
+    let active = true;
+    const checkApi = () => {
+      fetchHealth().then((health) => {
+        if (active) setApiOnline(health.ai_engine_online);
+      });
+    };
+    checkApi();
+    const interval = window.setInterval(checkApi, 15000);
+    return () => { active = false; window.clearInterval(interval); };
+  }, []);
 
   const navigateProtected = (targetView: string) => {
     if (!user) {
@@ -70,6 +83,7 @@ export function App() {
         currentView={currentView}
         setCurrentView={(view) => navigateProtected(view)}
         user={user}
+        apiOnline={apiOnline}
         onLogout={handleLogout}
       />
 

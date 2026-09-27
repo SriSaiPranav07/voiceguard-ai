@@ -18,6 +18,7 @@ interface SidebarProps {
   currentView: string;
   setCurrentView: (view: string) => void;
   user: UserType | null;
+  apiOnline: boolean;
   onLogout: () => void;
 }
 
@@ -25,6 +26,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   currentView,
   setCurrentView,
   user,
+  apiOnline,
   onLogout
 }) => {
   const menuItems = [
@@ -142,13 +144,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span className="status-dot"></span> AI Engine Online
+            <span className={`status-dot ${apiOnline ? '' : 'danger'}`}></span> AI Engine {apiOnline ? 'Online' : 'Offline'}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span className="status-dot"></span> API Connected
+            <span className={`status-dot ${apiOnline ? '' : 'danger'}`}></span> API {apiOnline ? 'Connected' : 'Disconnected'}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span className="status-dot"></span> Monitoring Active
+            <span className={`status-dot ${apiOnline ? 'warning' : 'danger'}`}></span> Monitoring {apiOnline ? 'Ready' : 'Unavailable'}
           </div>
         </div>
       </div>

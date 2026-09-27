@@ -34,18 +34,18 @@ async def websocket_live_detection(websocket: WebSocket):
 
             if "bytes" in message and message["bytes"]:
                 raw_bytes = message["bytes"]
-                # Convert uint8 / int16 bytes to float32 samples
+                # The browser sends little-endian signed 16-bit PCM.
                 try:
-                    samples = np.frombuffer(raw_bytes, dtype=np.uint8).astype(np.float32) / 255.0 - 0.5
+                    samples = np.frombuffer(raw_bytes, dtype="<i2").astype(np.float32) / 32768.0
                     rolling_buffer.extend(samples)
                 except Exception:
                     continue
 
                 frame_index += 1
 
-                # When we accumulate ~1 second of samples (e.g. 1024 or more)
-                if len(rolling_buffer) >= 512:
-                    current_window = np.array(rolling_buffer[-2048:], dtype=np.float32)
+                # Analyze a 0.5–1 second rolling audio window several times per second.
+                if len(rolling_buffer) >= 8000 and frame_index % 4 == 0:
+                    current_window = np.array(rolling_buffer[-16000:], dtype=np.float32)
                     features = extractor.extract_features(current_window)
                     auth_res = detector.analyze(features)
                     risk_res = risk_engine.evaluate(authenticity_result=auth_res)
@@ -67,8 +67,8 @@ async def websocket_live_detection(websocket: WebSocket):
                     await websocket.send_text(json.dumps(payload))
 
                     # Keep rolling buffer trimmed
-                    if len(rolling_buffer) > 4096:
-                        rolling_buffer = rolling_buffer[-2048:]
+                    if len(rolling_buffer) > 32000:
+                        rolling_buffer = rolling_buffer[-16000:]
             elif "text" in message:
                 try:
                     data = json.loads(message["text"])

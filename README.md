@@ -66,6 +66,16 @@ No validated evaluation results are available yet. Do not interpret synthetic de
 - **Run locally:** Follow [Installation](#installation).
 - **Sample audio:** See [`samples/`](samples/) and [`frontend/public/`](frontend/public/).
 
+## Deployment
+
+The frontend is a static Vite site and the FastAPI backend must run as a separate web service. This repository includes [vercel.json](vercel.json) to build the frontend from `frontend/` and [render.yaml](render.yaml) to describe the API service.
+
+1. Import this repository into Render as a Blueprint and deploy the `voiceguard-ai-api` service.
+2. In the Vercel project, keep the repository root as the project root. Set the `VITE_API_URL` environment variable to the API service's public HTTPS URL (for example, `https://voiceguard-ai-api.onrender.com`) for Production and Preview, then redeploy. The frontend derives its secure WebSocket URL from this value; set `VITE_WS_URL` only if the WebSocket host differs.
+3. Open `https://<your-api-host>/api/health` and confirm it returns a healthy response before testing live microphone analysis.
+
+The backend allows the project's `voiceguard-ai*.vercel.app` deployment origins by default and supports explicit origins through `CORS_ORIGINS`. The free Render service may sleep when idle, so its first request after inactivity can take longer while it starts.
+
 ## Screenshots
 
 No screenshots are included yet. Add images under a `docs/screenshots/` directory and link them here when available.
@@ -93,7 +103,7 @@ npm install
 npm run dev
 ```
 
-Open the Vite URL shown in the terminal (by default, `http://localhost:5173`). The Vite development server proxies `/api` and `/ws` to `localhost:8000`. For a separate deployment, configure `VITE_API_URL` and, when needed, `VITE_WS_URL`.
+Open the Vite URL shown in the terminal (by default, `http://localhost:5173`). The Vite development server proxies `/api` and `/ws` to `localhost:8000`. For a separate deployment, configure `VITE_API_URL` and, when needed, `VITE_WS_URL`; see [Deployment](#deployment).
 
 ## API
 

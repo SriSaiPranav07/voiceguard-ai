@@ -25,20 +25,25 @@ app = FastAPI(
 )
 
 # CORS Configuration
-# Allows requests from local Vite dev (port 5173, 3000), preview servers, and deployed Vercel frontends
-allowed_origins = [
+# Set CORS_ORIGINS to a comma-separated list when deploying to a different frontend host.
+allowed_origins = [origin.strip() for origin in os.environ.get("CORS_ORIGINS", "").split(",") if origin.strip()]
+allowed_origins.extend([
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:8000",
     "http://127.0.0.1:8000",
-    "*",
-]
+])
+allowed_origin_regex = os.environ.get(
+    "CORS_ORIGIN_REGEX",
+    r"https://voiceguard-ai-[a-z0-9-]+\.vercel\.app",
+)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    allow_origin_regex=allowed_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

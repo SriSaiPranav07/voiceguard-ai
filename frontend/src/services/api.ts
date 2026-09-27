@@ -1,12 +1,16 @@
 // VoiceGuard AI — Frontend API Service
-// Configurable via VITE_API_URL (defaults to empty string for relative paths in production/proxy, or http://localhost:8000 in dev)
+// Set VITE_API_URL to the deployed FastAPI origin (for example, a Render service URL).
 
-const envApiUrl = import.meta.env.VITE_API_URL;
-export const API_BASE_URL = envApiUrl ? envApiUrl.replace(/\/$/, '') : '';
+const envApiUrl = import.meta.env.VITE_API_URL?.trim();
+export const API_BASE_URL = envApiUrl ? envApiUrl.replace(/\/+$/, '') : '';
 
 export const WS_BASE_URL = (() => {
-  if (import.meta.env.VITE_WS_URL) {
-    return import.meta.env.VITE_WS_URL;
+  const configuredWsUrl = import.meta.env.VITE_WS_URL?.trim();
+  if (configuredWsUrl) {
+    return configuredWsUrl.replace(/\/+$/, '');
+  }
+  if (API_BASE_URL) {
+    return API_BASE_URL.replace(/^https:/i, 'wss:').replace(/^http:/i, 'ws:');
   }
   if (typeof window !== 'undefined') {
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
