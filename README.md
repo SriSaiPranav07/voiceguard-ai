@@ -68,7 +68,7 @@ No validated evaluation results are available yet. Do not interpret synthetic de
 
 ## Deployment
 
-The combined Vercel project must use the repository root as its project root. The root npm workspace installs the frontend dependencies and builds Vite into `public/`; [`api/index.py`](api/index.py) exposes FastAPI, and root [`requirements.txt`](requirements.txt) supplies its Python dependencies. [`vercel.json`](vercel.json) keeps SPA routes on `index.html` and routes API requests to the Python function. The frontend uses same-origin `/api/...` requests by default. Verify a deployment at `/api/health` before testing microphone analysis.
+The combined Vercel project must use the repository root as its project root. Its build command clean-installs the root npm workspace, then builds Vite into `frontend/dist/`; [`api/index.py`](api/index.py) exposes FastAPI, and root [`requirements.txt`](requirements.txt) supplies its Python dependencies. [`vercel.json`](vercel.json) serves the built frontend, preserves SPA routes, and routes API requests to the Python function. The frontend uses same-origin `/api/...` requests by default. Verify a deployment at `/api/health` before testing microphone analysis.
 
 Live analysis uses the repository's deterministic signal-processing baseline. It is not a benchmark-validated trained anti-spoofing model; the displayed scores are heuristic estimates and must not be treated as reliable identity or fraud verdicts.
 

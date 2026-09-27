@@ -26,10 +26,8 @@ export default defineConfig({
     },
   },
   build: {
-    // Vercel serves the frontend and FastAPI function from the same deployment.
-    outDir: '../public',
-    // The root public directory already contains the sample audio assets.
-    emptyOutDir: false,
+    outDir: 'dist',
+    emptyOutDir: true,
     sourcemap: false,
     rollupOptions: {
       output: {
