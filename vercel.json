@@ -1,5 +1,4 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "fastapi",
-  "buildCommand": "npm ci --prefix frontend && npm run build --prefix frontend"
+  "framework": "fastapi"
 }

@@ -68,7 +68,7 @@ No validated evaluation results are available yet. Do not interpret synthetic de
 
 ## Deployment
 
-The Vercel project must use the repository root as its project root. [vercel.json](vercel.json) builds the React frontend into Vercel's root `public/` static directory, while [pyproject.toml](pyproject.toml) points the Python runtime at the FastAPI app and [requirements.txt](requirements.txt) installs its dependencies. Push to the connected branch to deploy both together. The frontend uses same-origin `/api/...` requests, so no `VITE_API_URL` setting is needed. Confirm the deployment by opening `https://<your-deployment>/api/health`; it should return a healthy response before testing microphone analysis.
+The combined Vercel project must use the repository root as its project root. [pyproject.toml](pyproject.toml) points Vercel to the FastAPI app and runs [build.py](build.py), which builds the React frontend into Vercel's root `public/` static directory. Root [requirements.txt](requirements.txt) installs the backend dependencies. Push to the connected branch to deploy both together. The frontend uses same-origin `/api/...` requests, so no `VITE_API_URL` setting is needed. Confirm the deployment by opening `https://<your-deployment>/api/health`; it should return a healthy response before testing microphone analysis.
 
 The backend also allows this Vercel project's deployment origins by default and supports explicit origins through `CORS_ORIGINS`. For local development, the Vite proxy forwards API and WebSocket requests to `localhost:8000`.
 

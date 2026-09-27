@@ -4,6 +4,7 @@ import { defineConfig } from 'vite';
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  publicDir: false,
   optimizeDeps: {
     include: ['canvg', 'html2canvas', 'dompurify'],
   },
@@ -25,9 +26,10 @@ export default defineConfig({
     },
   },
   build: {
-    // Vercel serves files from the repository's public/ directory alongside the API function.
+    // Vercel serves the frontend and FastAPI function from the same deployment.
     outDir: '../public',
-    emptyOutDir: true,
+    // The root public directory already contains the sample audio assets.
+    emptyOutDir: false,
     sourcemap: false,
     rollupOptions: {
       output: {
