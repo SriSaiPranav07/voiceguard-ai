@@ -2,8 +2,11 @@
   "name": "voiceguard-ai",
   "version": "1.0.0",
   "private": true,
+  "workspaces": [
+    "frontend"
+  ],
   "scripts": {
-    "build": "npm run build --prefix frontend",
-    "dev": "npm run dev --prefix frontend"
+    "build": "npm run build --workspace=frontend",
+    "dev": "npm run dev --workspace=frontend"
   }
 }

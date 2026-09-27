@@ -42,7 +42,6 @@ export const LiveDetection: React.FC = () => {
   const [riskScore, setRiskScore] = useState(0);
   const [primaryIndicators, setPrimaryIndicators] = useState<string[]>([]);
   const [verdict, setVerdict] = useState<'IDLE' | 'REAL' | 'FAKE' | 'SUSPICIOUS'>('IDLE');
-  const [demoFallback, setDemoFallback] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -53,6 +52,9 @@ export const LiveDetection: React.FC = () => {
   const pcmBufferRef = useRef<Float32Array[]>([]);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const chunkTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recordingActiveRef = useRef(false);
+  const analysisInFlightRef = useRef(false);
+  const analysisAbortRef = useRef<AbortController | null>(null);
   const SR = 16000;
 
   useEffect(() => { pausedRef.current = isPaused; }, [isPaused]);
@@ -66,13 +68,15 @@ export const LiveDetection: React.FC = () => {
         try {
           const d = JSON.parse(ev.data);
           if (d.action === 'pong') return;
-          const cls = (d.classification || 'REAL') as any;
-          setVerdict(cls); setFrameCount(d.frame_index || 0); setLatencyMs(d.latency_ms || 0);
-          setConfidence(Math.round(d.confidence || 88));
-          setSyntheticProb(Math.round(d.synthetic_probability || 10));
-          setHumanProb(Math.round(d.human_probability || 90));
-          setReplayProb(Math.round(d.replay_probability || 5));
-          setRiskScore(Math.round(d.risk_score || 12));
+          const numericResults = [d.confidence, d.synthetic_probability, d.human_probability, d.replay_probability, d.risk_score];
+          if (!['REAL', 'FAKE', 'SUSPICIOUS'].includes(d.classification) || !numericResults.every(Number.isFinite)) return;
+          const cls = d.classification as 'REAL' | 'FAKE' | 'SUSPICIOUS';
+          setVerdict(cls); setFrameCount(d.frame_index); setLatencyMs(d.latency_ms);
+          setConfidence(Math.round(d.confidence));
+          setSyntheticProb(Math.round(d.synthetic_probability));
+          setHumanProb(Math.round(d.human_probability));
+          setReplayProb(Math.round(d.replay_probability));
+          setRiskScore(Math.round(d.risk_score));
           setStatusText(cls === 'FAKE' ? 'SYNTHETIC VOICE DETECTED' : cls === 'SUSPICIOUS' ? 'SUSPICIOUS PATTERN' : 'GENUINE SPEECH VERIFIED');
           if (d.primary_indicators?.length) setPrimaryIndicators(d.primary_indicators);
         } catch { /* ignore */ }
@@ -101,62 +105,25 @@ export const LiveDetection: React.FC = () => {
   }, []);
 
   const applyResult = (data: any, latency: number) => {
-    const auth = data.authenticity || {};
-    const cls = (auth.classification || 'REAL') as any;
-    setSyntheticProb(Math.round(auth.synthetic_speech_probability ?? 10));
-    setHumanProb(Math.round(auth.human_speech_probability ?? 90));
-    setReplayProb(Math.round((data.replay_detection?.probability ?? 0) * 100 || auth.replay_probability || 5));
-    setRiskScore(Math.round(data.risk?.score ?? data.risk_engine?.overall_risk_score ?? 0));
-    setConfidence(Math.round(auth.model_confidence ?? 85));
+    const auth = data.authenticity;
+    const cls = auth.classification as 'REAL' | 'FAKE' | 'SUSPICIOUS';
+    setSyntheticProb(Math.round(auth.synthetic_speech_probability));
+    setHumanProb(Math.round(auth.human_speech_probability));
+    setReplayProb(Math.round(data.replay_detection.probability * 100));
+    setRiskScore(Math.round(data.risk.score));
+    setConfidence(Math.round(auth.model_confidence));
     setVerdict(cls); setLatencyMs(latency);
     setFrameCount((p) => p + 1); setIsAnalyzing(false);
     setStatusText(cls === 'FAKE' ? 'SYNTHETIC VOICE DETECTED' : cls === 'SUSPICIOUS' ? 'SUSPICIOUS PATTERN DETECTED' : 'GENUINE SPEECH VERIFIED');
     setPrimaryIndicators(data.evidence ?? data.risk_engine?.primary_indicators ?? []);
   };
 
-  const localAnalyze = (samples: Float32Array) => {
-    let sumSq = 0;
-    for (let i = 0; i < samples.length; i++) sumSq += samples[i] * samples[i];
-    const rms = Math.sqrt(sumSq / samples.length);
-
-    let zcr = 0;
-    for (let i = 1; i < samples.length; i++) {
-      if ((samples[i] >= 0 && samples[i - 1] < 0) || (samples[i] < 0 && samples[i - 1] >= 0)) zcr++;
-    }
-    const zcrRate = zcr / samples.length;
-
-    const isLowEnergy = rms < 0.01;
-    const isSynthetic = zcrRate < 0.03 || zcrRate > 0.35;
-    const synthProb = isLowEnergy ? 10 : isSynthetic ? Math.round(75 + Math.random() * 15) : Math.round(8 + Math.random() * 10);
-    const humanProb = 100 - synthProb;
-    const isFake = synthProb > 65;
-    const isSuspicious = synthProb > 40 && synthProb <= 65;
-    const classification = isFake ? 'FAKE' : isSuspicious ? 'SUSPICIOUS' : 'REAL';
-
-    applyResult({
-      authenticity: {
-        classification,
-        synthetic_speech_probability: synthProb,
-        human_speech_probability: humanProb,
-        model_confidence: Math.round(85 + Math.random() * 10),
-        replay_probability: Math.round(4 + Math.random() * 10),
-      },
-      replay_detection: {
-        probability: 0.05,
-        is_replay: false,
-      },
-      risk: {
-        score: isFake ? Math.round(78 + Math.random() * 16) : isSuspicious ? Math.round(45 + Math.random() * 12) : Math.round(10 + Math.random() * 8),
-        level: isFake ? 'HIGH' : isSuspicious ? 'MEDIUM' : 'LOW',
-      },
-      evidence: isFake
-        ? ['Spectral roll-off anomalies detected', 'Neural vocoder frame boundary signatures identified']
-        : ['Natural vocal tract acoustic dispersion verified', 'Biological pitch micro-fluctuations present'],
-    }, Math.round(12 + Math.random() * 18));
-  };
-
   const sendBufferForAnalysis = async () => {
-    if (pausedRef.current || pcmBufferRef.current.length === 0) return;
+    if (!recordingActiveRef.current || pausedRef.current || pcmBufferRef.current.length === 0) return;
+    if (analysisInFlightRef.current) {
+      pcmBufferRef.current = [];
+      return;
+    }
     const totalLen = pcmBufferRef.current.reduce((s, c) => s + c.length, 0);
     if (totalLen < SR * 0.5) return;
     const merged = new Float32Array(totalLen);
@@ -166,21 +133,17 @@ export const LiveDetection: React.FC = () => {
     const wav = encodeWAV(merged, SR);
     if (wav.size < 500) return;
 
-    if (demoFallback) {
-      setIsAnalyzing(true);
-      setTimeout(() => {
-        localAnalyze(merged);
-      }, 250);
-      return;
-    }
-
+    analysisInFlightRef.current = true;
+    const controller = new AbortController();
+    analysisAbortRef.current = controller;
+    const timeoutId = window.setTimeout(() => controller.abort(), 20000);
     setIsAnalyzing(true);
     const t0 = performance.now();
     try {
       const fd = new FormData();
       fd.append('file', wav, 'live_chunk.wav');
       fd.append('language', 'auto');
-      const res = await fetch(`${API_BASE_URL}/api/analyze`, { method: 'POST', body: fd });
+      const res = await fetch(`${API_BASE_URL}/api/analyze`, { method: 'POST', body: fd, signal: controller.signal });
       if (!res.ok) {
         let detail = `HTTP ${res.status}`;
         try {
@@ -191,20 +154,36 @@ export const LiveDetection: React.FC = () => {
         }
         throw new Error(detail);
       }
-      applyResult(await res.json(), Math.round(performance.now() - t0));
+      const data = await res.json();
+      const auth = data?.authenticity;
+      const values = [auth?.synthetic_speech_probability, auth?.human_speech_probability, auth?.model_confidence, data?.replay_detection?.probability, data?.risk?.score];
+      if (!['REAL', 'FAKE', 'SUSPICIOUS'].includes(auth?.classification) || !values.every((value) => Number.isFinite(value))) {
+        throw new Error('The backend returned an incomplete analysis result.');
+      }
+      applyResult(data, Math.round(performance.now() - t0));
       setApiConnected(true);
       setErrorMsg('');
     } catch (error) {
+      if (!recordingActiveRef.current) return;
       setIsAnalyzing(false);
       setApiConnected(false);
       setStatusText('Analysis request failed');
-      setErrorMsg(`Could not analyze this audio window at ${API_BASE_URL || window.location.origin}/api/analyze. ${error instanceof Error ? error.message : 'Check the backend URL and deployment logs.'}`);
+      const reason = controller.signal.aborted ? 'Analysis timed out after 20 seconds.' : error instanceof Error ? error.message : 'Check the backend URL and deployment logs.';
+      setErrorMsg(`Could not analyze this audio window at ${API_BASE_URL || window.location.origin}/api/analyze. ${reason}`);
+    } finally {
+      window.clearTimeout(timeoutId);
+      analysisInFlightRef.current = false;
+      if (analysisAbortRef.current === controller) analysisAbortRef.current = null;
+      if (recordingActiveRef.current) setIsAnalyzing(false);
     }
   };
 
   const startRecording = async () => {
     setErrorMsg(''); setIsPaused(false); pausedRef.current = false; pcmBufferRef.current = [];
     try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error('Microphone capture is not supported by this browser. Use a current browser over HTTPS.');
+      }
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { sampleRate: { ideal: SR }, channelCount: 1, echoCancellation: true, noiseSuppression: true },
       });
@@ -231,6 +210,7 @@ export const LiveDetection: React.FC = () => {
           wsRef.current.send(i16.buffer);
         }
       };
+      recordingActiveRef.current = true;
       setIsRecording(true);
       setStatusText('Listening — capturing audio...');
       chunkTimerRef.current = setInterval(sendBufferForAnalysis, 3000);
@@ -269,9 +249,19 @@ export const LiveDetection: React.FC = () => {
         }
       };
       draw();
-    } catch {
-      setErrorMsg('Microphone permission denied. Please allow microphone access in browser settings.');
+    } catch (error) {
+      const message = error instanceof Error && error.message.includes('not supported')
+        ? error.message
+        : error instanceof DOMException && error.name === 'NotFoundError'
+          ? 'No microphone was found. Connect a microphone and try again.'
+          : error instanceof DOMException && error.name === 'NotAllowedError'
+            ? 'Microphone permission was denied. Allow microphone access in browser settings and try again.'
+            : error instanceof DOMException && error.name === 'NotReadableError'
+              ? 'The microphone is already in use or unavailable.'
+              : 'Could not start microphone capture. Check browser permissions and try again.';
+      setErrorMsg(message);
       setIsRecording(false);
+      cleanup();
     }
   };
 
@@ -282,6 +272,9 @@ export const LiveDetection: React.FC = () => {
   };
 
   const cleanup = () => {
+    recordingActiveRef.current = false;
+    analysisAbortRef.current?.abort();
+    analysisAbortRef.current = null;
     if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     if (chunkTimerRef.current) clearInterval(chunkTimerRef.current);
     processorRef.current?.disconnect(); processorRef.current = null;
@@ -330,8 +323,8 @@ export const LiveDetection: React.FC = () => {
       <div style={{ background: 'rgba(56,189,248,0.08)', border: '1px solid rgba(56,189,248,0.25)', color: 'var(--accent-cyan)', padding: '12px 20px', borderRadius: '10px', fontSize: '0.84rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
         <AlertCircle size={16} />
         <span>
-          <strong>HOW IT WORKS:</strong> Mic audio is captured as raw PCM, encoded as WAV, and sent to the VoiceGuard API every 3s.
-          Configure <code style={{ background: 'rgba(255,255,255,0.1)', padding: '1px 6px', borderRadius: '4px' }}>VITE_API_URL</code> with your deployed backend origin.
+          <strong>HOW IT WORKS:</strong> Mic audio is captured as raw PCM, encoded as WAV, and sent to the same-origin VoiceGuard API every 3s.
+          Set <code style={{ background: 'rgba(255,255,255,0.1)', padding: '1px 6px', borderRadius: '4px' }}>VITE_API_URL</code> only when using a separately deployed backend.
         </span>
       </div>
 
@@ -356,7 +349,7 @@ export const LiveDetection: React.FC = () => {
           <div style={{ fontSize: '0.77rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--bg-tertiary)', padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
             {wsConnected ? <Wifi size={13} color="var(--accent-emerald)" /> : <WifiOff size={13} />}
             WS: <strong style={{ color: wsConnected ? 'var(--accent-emerald)' : '#555' }}>{wsConnected ? 'LIVE' : 'OFF'}</strong>
-            &nbsp;|&nbsp; API: <strong style={{ color: apiConnected ? 'var(--accent-emerald)' : demoFallback ? 'var(--accent-amber)' : 'var(--accent-rose)' }}>{apiConnected ? 'ONLINE' : demoFallback ? 'LOCAL SIM' : 'OFFLINE'}</strong>
+            &nbsp;|&nbsp; API: <strong style={{ color: apiConnected ? 'var(--accent-emerald)' : 'var(--accent-rose)' }}>{apiConnected ? 'ONLINE' : 'OFFLINE'}</strong>
           </div>
 
           {isRecording ? (
@@ -395,26 +388,10 @@ export const LiveDetection: React.FC = () => {
               <strong>Error: </strong>{errorMsg}
               <br />
               <span style={{ fontSize: '0.8rem', opacity: 0.8 }}>
-                Confirm the backend is deployed and <code style={{ background: 'rgba(255,255,255,0.1)', padding: '1px 6px', borderRadius: '4px' }}>VITE_API_URL</code> points to it.
+                Check that this deployment includes the FastAPI routes, or set <code style={{ background: 'rgba(255,255,255,0.1)', padding: '1px 6px', borderRadius: '4px' }}>VITE_API_URL</code> to a separately deployed backend.
               </span>
             </div>
           </div>
-          <button
-            onClick={() => { setDemoFallback(true); setErrorMsg(''); setStatusText('Listening — Local Forensic Engine active'); }}
-            style={{
-              background: 'rgba(245,158,11,0.2)',
-              border: '1px solid rgba(245,158,11,0.5)',
-              color: '#fef3c7',
-              padding: '6px 12px',
-              borderRadius: '6px',
-              fontSize: '0.8rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            Switch to Local Forensic Engine
-          </button>
         </div>
       )}
 

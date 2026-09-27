@@ -68,14 +68,9 @@ No validated evaluation results are available yet. Do not interpret synthetic de
 
 ## Deployment
 
-## Deployment
+The combined Vercel project must use the repository root as its project root. The root npm workspace installs the frontend dependencies and builds Vite into `public/`; [`api/index.py`](api/index.py) exposes FastAPI, and root [`requirements.txt`](requirements.txt) supplies its Python dependencies. [`vercel.json`](vercel.json) keeps SPA routes on `index.html` and routes API requests to the Python function. The frontend uses same-origin `/api/...` requests by default. Verify a deployment at `/api/health` before testing microphone analysis.
 
-The combined Vercel project uses the repository root as its project root:
-- **Serverless API Function**: [`api/index.py`](api/index.py) exports the FastAPI `app` as a Vercel Serverless Function. [`vercel.json`](vercel.json) rewrites `/api/*` requests directly to this function.
-- **Frontend Build**: [`build.py`](build.py) compiles the Vite React frontend into Vercel's static `public/` directory during deployment.
-- **Dependencies**: Root [`requirements.txt`](requirements.txt) installs the FastAPI and acoustic processing packages into Vercel's Python runtime.
-- **Client-Side Routing**: Single Page Application (SPA) routes are rewritten to `/index.html` while preserving direct static asset delivery.
-- **Verification**: Once deployed, visit `https://<your-deployment>/api/health` to confirm the backend is healthy (`"status": "healthy", "ai_engine_online": true`). The live microphone and audio analysis will immediately connect without requiring `VITE_API_URL`. If using a separately hosted backend (e.g. Render or Railway for continuous WebSockets), configure `VITE_API_URL` and `VITE_WS_URL`.
+Live analysis uses the repository's deterministic signal-processing baseline. It is not a benchmark-validated trained anti-spoofing model; the displayed scores are heuristic estimates and must not be treated as reliable identity or fraud verdicts.
 
 The backend also allows all Vercel project deployment origins by default and supports explicit origins through `CORS_ORIGINS`. For local development, the Vite proxy forwards API and WebSocket requests to `localhost:8000`.
 

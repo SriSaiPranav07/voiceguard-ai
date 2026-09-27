@@ -4,6 +4,7 @@ import numpy as np
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from backend.services.feature_extractor import FeatureExtractor
 from backend.services.deepfake_detector import DeepfakeDetector
+from backend.services.replay_detector import ReplayDetector
 from backend.services.risk_engine import RiskEngine
 from backend.utils.logger import get_logger
 
@@ -12,6 +13,7 @@ router = APIRouter(tags=["WebSocket Live Streaming"])
 
 extractor = FeatureExtractor()
 detector = DeepfakeDetector()
+replay_detector = ReplayDetector()
 risk_engine = RiskEngine()
 
 @router.websocket("/ws/live-detection")
@@ -48,7 +50,8 @@ async def websocket_live_detection(websocket: WebSocket):
                     current_window = np.array(rolling_buffer[-16000:], dtype=np.float32)
                     features = extractor.extract_features(current_window)
                     auth_res = detector.analyze(features)
-                    risk_res = risk_engine.evaluate(authenticity_result=auth_res)
+                    replay_res = replay_detector.analyze(features, waveform=current_window)
+                    risk_res = risk_engine.evaluate(authenticity_result=auth_res, replay_result=replay_res)
 
                     latency_ms = int((time.perf_counter() - start_t) * 1000)
 
@@ -60,7 +63,7 @@ async def websocket_live_detection(websocket: WebSocket):
                         "confidence": auth_res["model_confidence"],
                         "synthetic_probability": auth_res["synthetic_speech_probability"],
                         "human_probability": auth_res["human_speech_probability"],
-                        "replay_probability": 8.0,
+                        "replay_probability": round(replay_res["probability"] * 100, 1),
                         "risk_score": risk_res["score"],
                         "primary_indicators": auth_res["evidence"][:2],
                     }

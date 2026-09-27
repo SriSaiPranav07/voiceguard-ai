@@ -1,5 +1,5 @@
 // VoiceGuard AI — Frontend API Service
-// Set VITE_API_URL to the deployed FastAPI origin (for example, a Render service URL).
+// Leave VITE_API_URL unset for the same-origin Vercel API; configure it only for a separate backend.
 
 const envApiUrl = import.meta.env.VITE_API_URL?.trim();
 export const API_BASE_URL = envApiUrl ? envApiUrl.replace(/\/+$/, '') : '';
