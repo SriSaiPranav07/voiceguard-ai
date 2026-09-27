@@ -4,7 +4,7 @@ import { defineConfig } from 'vite';
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
-  publicDir: false,
+  publicDir: 'public',
   optimizeDeps: {
     include: ['canvg', 'html2canvas', 'dompurify'],
   },

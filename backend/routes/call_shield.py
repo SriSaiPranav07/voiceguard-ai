@@ -66,6 +66,7 @@ INCIDENTS_DATABASE = [
 ]
 
 @router.get("/api/v1/call-shield/incidents")
+@router.get("/v1/call-shield/incidents")
 async def get_incidents():
     """Returns active threat incidents for SOC operations."""
     return {
@@ -75,6 +76,7 @@ async def get_incidents():
     }
 
 @router.post("/api/v1/call-shield/analyze-threat")
+@router.post("/v1/call-shield/analyze-threat")
 async def analyze_threat(
     category: str = Form("Kidnapping / Extortion"),
     caller_phone: str = Form("+91 98765 43210"),

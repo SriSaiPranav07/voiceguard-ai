@@ -37,7 +37,7 @@ allowed_origins.extend([
 ])
 allowed_origin_regex = os.environ.get(
     "CORS_ORIGIN_REGEX",
-    r"https://voiceguard-ai-[a-z0-9-]+\.vercel\.app",
+    r"https://.*\.vercel\.app",
 )
 
 app.add_middleware(
@@ -79,6 +79,7 @@ app.include_router(call_shield_router)
 app.include_router(ws_live_router)
 
 @app.get("/")
+@app.get("/api")
 async def root():
     return {
         "platform": "VoiceGuard AI — AI-Powered Voice Threat Platform",

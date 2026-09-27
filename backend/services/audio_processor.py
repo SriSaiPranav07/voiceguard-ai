@@ -3,8 +3,12 @@ import os
 import tempfile
 import wave
 import numpy as np
-import soundfile as sf
+try:
+    import soundfile as sf
+except Exception:
+    sf = None
 from scipy import signal
+from scipy.io import wavfile
 from backend.utils.security import is_allowed_audio_file, MAX_FILE_SIZE_BYTES, safe_cleanup_file
 from backend.utils.logger import get_logger
 
@@ -56,11 +60,34 @@ class AudioProcessor:
                 tf.write(audio_bytes)
                 temp_input = tf.name
 
-            # Read with soundfile
-            try:
-                data, sr = sf.read(temp_input, dtype="float32")
-            except Exception as e:
-                # If soundfile fails, attempt raw wave fallback if WAV format
+            data = None
+            sr = None
+
+            # 1. Attempt decoding with soundfile if library is available
+            if sf is not None:
+                try:
+                    data, sr = sf.read(temp_input, dtype="float32")
+                except Exception:
+                    data = None
+
+            # 2. Fallback to scipy.io.wavfile (standard for WAV)
+            if data is None:
+                try:
+                    sr_read, raw_arr = wavfile.read(temp_input)
+                    sr = sr_read
+                    if raw_arr.dtype == np.int16:
+                        data = (raw_arr / 32768.0).astype(np.float32)
+                    elif raw_arr.dtype == np.int32:
+                        data = (raw_arr / 2147483648.0).astype(np.float32)
+                    elif raw_arr.dtype == np.uint8:
+                        data = ((raw_arr.astype(np.float32) - 128.0) / 128.0).astype(np.float32)
+                    elif raw_arr.dtype in (np.float32, np.float64):
+                        data = raw_arr.astype(np.float32)
+                except Exception:
+                    data = None
+
+            # 3. Fallback to standard library wave module
+            if data is None:
                 try:
                     with wave.open(temp_input, "rb") as wf:
                         n_channels = wf.getnchannels()

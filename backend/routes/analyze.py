@@ -27,6 +27,7 @@ ANALYSIS_HISTORY = []
 MAX_HISTORY_ITEMS = 50
 
 @router.post("/api/analyze")
+@router.post("/analyze")
 async def analyze_audio(
     file: UploadFile = File(..., description="Incoming voice audio recording to evaluate"),
     reference_file: Optional[UploadFile] = File(None, description="Optional enrolled reference voice for speaker verification"),
@@ -151,6 +152,7 @@ async def analyze_audio(
         raise HTTPException(status_code=500, detail=f"Internal analysis pipeline error: {str(e)}")
 
 @router.get("/api/history")
+@router.get("/history")
 async def get_analysis_history():
     """
     Returns session analysis history (metadata only, no voice files stored).

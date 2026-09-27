@@ -1,5 +1,9 @@
 [tool.vercel]
-entrypoint = "backend.app:app"
+entrypoint = "api/index.py"
 
 [tool.vercel.scripts]
 build = "python build.py"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

@@ -10,6 +10,7 @@ extractor = FeatureExtractor()
 verifier = SpeakerVerifier()
 
 @router.post("/api/verify-speaker")
+@router.post("/verify-speaker")
 async def verify_speaker_endpoint(
     reference_file: UploadFile = File(..., description="Reference enrolled voice recording of legitimate speaker"),
     incoming_file: UploadFile = File(..., description="Incoming voice sample to verify"),

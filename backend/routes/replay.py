@@ -10,6 +10,7 @@ extractor = FeatureExtractor()
 replay_detector = ReplayDetector()
 
 @router.post("/api/detect-replay")
+@router.post("/detect-replay")
 async def detect_replay_endpoint(
     file: UploadFile = File(..., description="Audio recording to analyze for physical replay attack"),
 ):

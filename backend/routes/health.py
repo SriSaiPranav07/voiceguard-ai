@@ -12,6 +12,7 @@ class HealthResponseModel(BaseModel):
     active_modules: Dict[str, bool]
 
 @router.get("/api/health", response_model=HealthResponseModel)
+@router.get("/health", response_model=HealthResponseModel)
 async def get_health():
     """
     System Health & Operational Status endpoint.
