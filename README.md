@@ -68,13 +68,9 @@ No validated evaluation results are available yet. Do not interpret synthetic de
 
 ## Deployment
 
-The frontend is a static Vite site and the FastAPI backend must run as a separate web service. This repository includes [vercel.json](vercel.json) to build the frontend from `frontend/` and [render.yaml](render.yaml) to describe the API service.
+The Vercel project must use the repository root as its project root. [vercel.json](vercel.json) builds the React frontend into Vercel's root `public/` static directory, while [pyproject.toml](pyproject.toml) points the Python runtime at the FastAPI app and [requirements.txt](requirements.txt) installs its dependencies. Push to the connected branch to deploy both together. The frontend uses same-origin `/api/...` requests, so no `VITE_API_URL` setting is needed. Confirm the deployment by opening `https://<your-deployment>/api/health`; it should return a healthy response before testing microphone analysis.
 
-1. Import this repository into Render as a Blueprint and deploy the `voiceguard-ai-api` service.
-2. In the Vercel project, keep the repository root as the project root. Set the `VITE_API_URL` environment variable to the API service's public HTTPS URL (for example, `https://voiceguard-ai-api.onrender.com`) for Production and Preview, then redeploy. The frontend derives its secure WebSocket URL from this value; set `VITE_WS_URL` only if the WebSocket host differs.
-3. Open `https://<your-api-host>/api/health` and confirm it returns a healthy response before testing live microphone analysis.
-
-The backend allows the project's `voiceguard-ai*.vercel.app` deployment origins by default and supports explicit origins through `CORS_ORIGINS`. The free Render service may sleep when idle, so its first request after inactivity can take longer while it starts.
+The backend also allows this Vercel project's deployment origins by default and supports explicit origins through `CORS_ORIGINS`. For local development, the Vite proxy forwards API and WebSocket requests to `localhost:8000`.
 
 ## Screenshots
 
@@ -103,7 +99,7 @@ npm install
 npm run dev
 ```
 
-Open the Vite URL shown in the terminal (by default, `http://localhost:5173`). The Vite development server proxies `/api` and `/ws` to `localhost:8000`. For a separate deployment, configure `VITE_API_URL` and, when needed, `VITE_WS_URL`; see [Deployment](#deployment).
+Open the Vite URL shown in the terminal (by default, `http://localhost:5173`). The Vite development server proxies `/api` and `/ws` to `localhost:8000`. For a separately hosted backend, configure `VITE_API_URL` and, when needed, `VITE_WS_URL` using [`frontend/.env.example`](frontend/.env.example).
 
 ## API
 

@@ -25,7 +25,9 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: 'dist',
+    // Vercel serves files from the repository's public/ directory alongside the API function.
+    outDir: '../public',
+    emptyOutDir: true,
     sourcemap: false,
     rollupOptions: {
       output: {
