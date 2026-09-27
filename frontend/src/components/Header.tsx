@@ -25,6 +25,7 @@ export const Header: React.FC<HeaderProps> = ({
     'call-shield': 'Call Shield Threat Intelligence',
     'audio-analysis': 'Deepfake & Synthetic Speech Analysis',
     'multilingual': 'Multilingual Voice Intelligence (EN / TE / HI)',
+    'attack-sim': 'SIH 2026 Attack Simulation & Threat Scenarios',
     'speaker-verification': 'Speaker Verification & Biometrics',
     'threat-intel': 'Global Voice Threat Feed',
     'incidents': 'Incident Response & Case Management',
@@ -51,9 +52,9 @@ export const Header: React.FC<HeaderProps> = ({
             <Shield size={14} /> Voice security monitoring is active
           </span>
         </div>
-        <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#fff', marginTop: '2px' }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#fff', marginTop: '4px', letterSpacing: '-0.01em' }}>
           {titles[currentView] || 'VoiceGuard AI'}
-        </h2>
+        </h1>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>

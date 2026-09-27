@@ -1,13 +1,22 @@
 // VoiceGuard AI — Frontend API Service
-// On Vercel production: all /api/* calls are relative (same origin → serverless functions).
-// In local dev: Vite proxy forwards /api/* → localhost:8000.
+// Configurable via VITE_API_URL (defaults to empty string for relative paths in production/proxy, or http://localhost:8000 in dev)
 
-// No hardcoded URL needed — always use relative /api paths.
-export const API_BASE_URL = '';
-export const WS_BASE_URL =
-  typeof window !== 'undefined' && window.location.hostname !== 'localhost'
-    ? `wss://${window.location.host}`
-    : 'ws://localhost:8000';
+const envApiUrl = import.meta.env.VITE_API_URL;
+export const API_BASE_URL = envApiUrl ? envApiUrl.replace(/\/$/, '') : '';
+
+export const WS_BASE_URL = (() => {
+  if (import.meta.env.VITE_WS_URL) {
+    return import.meta.env.VITE_WS_URL;
+  }
+  if (typeof window !== 'undefined') {
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      return 'ws://localhost:8000';
+    }
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${window.location.host}`;
+  }
+  return 'ws://localhost:8000';
+})();
 
 export interface User {
   id: string;
@@ -16,17 +25,44 @@ export interface User {
   role: string;
 }
 
+export type ModelStatus = 'PRODUCTION_MODEL' | 'BASELINE_MODEL' | 'DEMO_MODE' | 'MODEL_UNAVAILABLE';
+
 export interface AuthenticityMetrics {
+  label: 'genuine' | 'synthetic' | 'suspicious' | 'unknown';
   classification: string;
-  human_speech_probability: number;
-  synthetic_speech_probability: number;
-  replay_probability: number;
-  voice_conversion_probability: number;
-  confidence_interval: string;
+  score: number; // 0.0 - 1.0 (confidence of synthetic / genuine)
+  human_speech_probability: number; // 0 - 100%
+  synthetic_speech_probability: number; // 0 - 100%
+  replay_probability: number; // 0 - 100%
+  voice_conversion_probability?: number;
+  confidence_interval?: string;
   model_confidence: number;
 }
 
+export interface SpeakerVerificationResult {
+  available: boolean;
+  similarity: number; // 0.0 - 1.0
+  match: boolean;
+  threshold: number;
+  explanation: string;
+}
+
+export interface ReplayDetectionResult {
+  available: boolean;
+  probability: number; // 0.0 - 1.0
+  is_replay: boolean;
+  explanation: string;
+}
+
+export interface RiskEvaluation {
+  score: number; // 0 - 100
+  level: 'LOW' | 'MEDIUM' | 'HIGH';
+  factors: string[];
+  recommendation: string;
+}
+
 export interface AudioAnalysisResult {
+  status: 'success' | 'error';
   analysis_id: string;
   filename: string;
   file_size: number;
@@ -41,18 +77,27 @@ export interface AudioAnalysisResult {
   language_confidence: number;
   transcript: string;
   authenticity: AuthenticityMetrics;
-  risk_engine: {
+  speaker_verification?: SpeakerVerificationResult;
+  replay_detection?: ReplayDetectionResult;
+  risk: RiskEvaluation;
+  evidence: string[];
+  recommendation: string;
+  model_metadata: {
+    engine_name: string;
+    engine_version: string;
+    status: ModelStatus;
+    model_type: string;
+    is_demo_mode: boolean;
+  };
+  processing_time_ms: number;
+  confidence_disclaimer?: string;
+  // Legacy aliases for backward compatibility with existing PDF & components:
+  risk_engine?: {
     overall_risk_score: number;
     risk_level: string;
     primary_indicators: string[];
     recommendation: string;
   };
-  model_metadata: {
-    engine_version: string;
-    is_demo_mode: boolean;
-  };
-  confidence_disclaimer?: string;
-  processing_time_ms?: number;
 }
 
 export interface CallShieldIncidentItem {
@@ -68,18 +113,47 @@ export interface CallShieldIncidentItem {
   created_at: string;
 }
 
-export async function fetchHealth() {
+export interface HealthResponse {
+  status: string;
+  ai_engine_online: boolean;
+  model_status: ModelStatus;
+  model_version: string;
+  active_modules: {
+    audio_preprocessor: boolean;
+    feature_extractor: boolean;
+    authenticity_detector: boolean;
+    speaker_verifier: boolean;
+    replay_detector: boolean;
+    risk_engine: boolean;
+  };
+}
+
+export async function fetchHealth(): Promise<HealthResponse> {
   try {
-    const res = await fetch(`/api/health`);
+    const res = await fetch(`${API_BASE_URL}/api/health`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch {
-    return { status: 'offline', ai_engine_online: false };
+    return {
+      status: 'offline',
+      ai_engine_online: false,
+      model_status: 'MODEL_UNAVAILABLE',
+      model_version: 'VoiceGuard-v1.0.0-offline',
+      active_modules: {
+        audio_preprocessor: false,
+        feature_extractor: false,
+        authenticity_detector: false,
+        speaker_verifier: false,
+        replay_detector: false,
+        risk_engine: false,
+      },
+    };
   }
 }
 
 export async function loginUser(email: string, password: string, remember: boolean) {
   try {
-    const res = await fetch(`/api/v1/auth/login`, {
+    const res = await fetch(`${API_BASE_URL}/api/v1/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, remember_me: remember }),
@@ -90,34 +164,96 @@ export async function loginUser(email: string, password: string, remember: boole
   }
 }
 
-export async function signupUser(name: string, email: string, password: string) {
-  try {
-    const res = await fetch(`/api/v1/auth/signup`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, password }),
-    });
-    return await res.json();
-  } catch {
-    return { error: 'Network error' };
-  }
-}
-
 export async function analyzeAudioFile(
   file: File,
   language: string = 'auto',
+  referenceSpeakerFile?: File,
 ): Promise<AudioAnalysisResult> {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('language', language);
+  if (referenceSpeakerFile) {
+    formData.append('reference_file', referenceSpeakerFile);
+  }
 
-  const res = await fetch(`/api/analyze`, {
+  const res = await fetch(`${API_BASE_URL}/api/analyze`, {
     method: 'POST',
     body: formData,
   });
 
   if (!res.ok) {
-    throw new Error(`Analysis failed: ${res.status} ${res.statusText}`);
+    let errorDetail = `Analysis failed: HTTP ${res.status}`;
+    try {
+      const errJson = await res.json();
+      if (errJson.detail) errorDetail = errJson.detail;
+    } catch {
+      // ignore json parse error
+    }
+    throw new Error(errorDetail);
+  }
+
+  const data = await res.json();
+  
+  // Normalise legacy fields so components can access both formats
+  if (!data.risk_engine && data.risk) {
+    data.risk_engine = {
+      overall_risk_score: data.risk.score,
+      risk_level: data.risk.level,
+      primary_indicators: data.evidence || data.risk.factors || [],
+      recommendation: data.recommendation || data.risk.recommendation || '',
+    };
+  }
+
+  return data;
+}
+
+export async function verifySpeaker(
+  referenceFile: File,
+  incomingFile: File,
+  threshold: number = 0.75,
+): Promise<SpeakerVerificationResult> {
+  const formData = new FormData();
+  formData.append('reference_file', referenceFile);
+  formData.append('incoming_file', incomingFile);
+  formData.append('threshold', threshold.toString());
+
+  const res = await fetch(`${API_BASE_URL}/api/verify-speaker`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!res.ok) {
+    let detail = `Speaker verification failed: HTTP ${res.status}`;
+    try {
+      const j = await res.json();
+      if (j.detail) detail = j.detail;
+    } catch {
+      // ignore
+    }
+    throw new Error(detail);
+  }
+
+  return await res.json();
+}
+
+export async function detectReplay(file: File): Promise<ReplayDetectionResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const res = await fetch(`${API_BASE_URL}/api/detect-replay`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!res.ok) {
+    let detail = `Replay detection failed: HTTP ${res.status}`;
+    try {
+      const j = await res.json();
+      if (j.detail) detail = j.detail;
+    } catch {
+      // ignore
+    }
+    throw new Error(detail);
   }
 
   return await res.json();
@@ -129,28 +265,53 @@ export async function fetchIncidents(): Promise<{
   demo_notice: string;
 }> {
   try {
-    const res = await fetch(`/api/v1/call-shield/incidents`);
-    return await res.json();
+    const res = await fetch(`${API_BASE_URL}/api/v1/call-shield/incidents`);
+    if (res.ok) return await res.json();
   } catch {
-    return {
-      total_threats: 1,
-      incidents: [
-        {
-          id: 'INC-8921',
-          category: 'Kidnapping / Extortion Threat',
-          caller_id: '+91 98765 43210',
-          detected_language: 'Telugu',
-          language_code: 'te',
-          deepfake_risk: 91.4,
-          threat_score: 94,
-          transcript_snippet: 'మీ అబ్బాయి మా స్వాధీనంలో ఉన్నాడు...',
-          status: 'CRITICAL_ALERT',
-          created_at: '2026-09-17T21:45:00Z',
-        },
-      ],
-      demo_notice: 'HISTORICAL CASE LOGS',
-    };
+    // fallback below
   }
+  return {
+    total_threats: 6,
+    incidents: [
+      {
+        id: 'INC-8921',
+        category: 'Kidnapping / Extortion Threat',
+        caller_id: '+91 98765 43210',
+        detected_language: 'Telugu',
+        language_code: 'te',
+        deepfake_risk: 91.4,
+        threat_score: 94,
+        transcript_snippet: 'మీ అబ్బాయి మా స్వాధీనంలో ఉన్నాడు...',
+        status: 'CRITICAL_ALERT',
+        created_at: '2026-09-17T21:45:00Z',
+      },
+      {
+        id: 'INC-8994',
+        category: 'Digital Arrest Extortion',
+        caller_id: '+91 99887 76655',
+        detected_language: 'Hindi',
+        language_code: 'hi',
+        deepfake_risk: 94.8,
+        threat_score: 96,
+        transcript_snippet: 'हम सीबीआई मुख्यालय से बोल रहे हैं। आपके आधार नंबर पर संदिग्ध पार्सल मिला है।',
+        status: 'CRITICAL_ALERT',
+        created_at: '2026-09-17T22:18:00Z',
+      },
+      {
+        id: 'INC-8970',
+        category: 'Executive Voice Clone',
+        caller_id: '+1 (555) 019-8821',
+        detected_language: 'English',
+        language_code: 'en',
+        deepfake_risk: 89.5,
+        threat_score: 88,
+        transcript_snippet: 'I am currently in an urgent board meeting. Wire $45,000 to the vendor account.',
+        status: 'HIGH_RISK',
+        created_at: '2026-09-17T20:55:00Z',
+      },
+    ],
+    demo_notice: 'HISTORICAL CASE LOGS',
+  };
 }
 
 export async function analyzeCallThreat(
@@ -166,12 +327,23 @@ export async function analyzeCallThreat(
   if (file) formData.append('file', file);
 
   try {
-    const res = await fetch(`/api/v1/call-shield/analyze-threat`, {
+    const res = await fetch(`${API_BASE_URL}/api/v1/call-shield/analyze-threat`, {
       method: 'POST',
       body: formData,
     });
-    return await res.json();
+    if (res.ok) return await res.json();
+    return { error: `HTTP ${res.status}` };
   } catch {
-    return { error: 'Network error' };
+    return { error: 'Network error or service unavailable' };
   }
+}
+
+export async function fetchAnalysisHistory(): Promise<AudioAnalysisResult[]> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/history`);
+    if (res.ok) return await res.json();
+  } catch {
+    // ignore
+  }
+  return [];
 }

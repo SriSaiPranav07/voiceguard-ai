@@ -47,7 +47,12 @@ export function generateAnalysisPDF(data: AudioAnalysisResult) {
   y += 12;
 
   // Authenticity & Risk Scores Box
-  const isHighRisk = data.risk_engine.overall_risk_score > 60;
+  const riskScore = data.risk?.score ?? data.risk_engine?.overall_risk_score ?? 0;
+  const riskLevel = data.risk?.level ?? data.risk_engine?.risk_level ?? 'LOW';
+  const primaryIndicators = data.evidence ?? data.risk?.factors ?? data.risk_engine?.primary_indicators ?? [];
+  const recommendation = data.recommendation ?? data.risk?.recommendation ?? data.risk_engine?.recommendation ?? '';
+
+  const isHighRisk = riskScore > 60;
   doc.setFillColor(isHighRisk ? 254 : 240, isHighRisk ? 242 : 253, isHighRisk ? 242 : 244);
   doc.rect(14, y, pageWidth - 28, 30, 'F');
   doc.setDrawColor(isHighRisk ? 239 : 16, isHighRisk ? 68 : 185, isHighRisk ? 68 : 129);
@@ -57,13 +62,13 @@ export function generateAnalysisPDF(data: AudioAnalysisResult) {
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(isHighRisk ? 185 : 4, isHighRisk ? 28 : 120, isHighRisk ? 28 : 87);
   doc.text(`CLASSIFICATION: ${data.authenticity.classification}`, 20, y + 10);
-  doc.text(`OVERALL RISK SCORE: ${data.risk_engine.overall_risk_score} / 100 (${data.risk_engine.risk_level})`, 110, y + 10);
+  doc.text(`OVERALL RISK SCORE: ${riskScore} / 100 (${riskLevel})`, 110, y + 10);
 
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(51, 65, 85);
   doc.text(`Synthetic Probability: ${data.authenticity.synthetic_speech_probability}% | Human Probability: ${data.authenticity.human_speech_probability}%`, 20, y + 20);
-  doc.text(`Confidence Interval: ${data.authenticity.confidence_interval}`, 110, y + 20);
+  doc.text(`Confidence Interval: ${data.authenticity.confidence_interval || 'N/A'}`, 110, y + 20);
 
   y += 40;
 
@@ -76,7 +81,7 @@ export function generateAnalysisPDF(data: AudioAnalysisResult) {
 
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
-  data.risk_engine.primary_indicators.forEach((indicator) => {
+  primaryIndicators.forEach((indicator) => {
     doc.text(`• ${indicator}`, 18, y);
     y += 6;
   });
@@ -86,7 +91,7 @@ export function generateAnalysisPDF(data: AudioAnalysisResult) {
   doc.text('Security Recommendation:', 14, y);
   y += 6;
   doc.setFont('helvetica', 'normal');
-  doc.text(data.risk_engine.recommendation, 14, y, { maxWidth: pageWidth - 28 });
+  doc.text(recommendation, 14, y, { maxWidth: pageWidth - 28 });
   y += 14;
 
   // Speech Transcript Box

@@ -1,0 +1,118 @@
+import io
+import wave
+import struct
+import numpy as np
+import pytest
+from fastapi.testclient import TestClient
+from backend.app import app
+
+client = TestClient(app)
+
+def create_test_wav_bytes(duration_sec: float = 1.0, freq_hz: float = 440.0) -> bytes:
+    buffer = io.BytesIO()
+    sample_rate = 16000
+    n_samples = int(duration_sec * sample_rate)
+    with wave.open(buffer, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        for i in range(n_samples):
+            val = int(32767.0 * 0.4 * np.sin(2.0 * np.pi * freq_hz * (i / sample_rate)))
+            wf.writeframes(struct.pack("<h", val))
+    return buffer.getvalue()
+
+def test_root_endpoint():
+    response = client.get("/")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "online"
+    assert "endpoints" in data
+
+def test_health_endpoint():
+    response = client.get("/api/health")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "healthy"
+    assert data["ai_engine_online"] is True
+    assert "active_modules" in data
+    assert data["active_modules"]["audio_preprocessor"] is True
+    assert data["active_modules"]["authenticity_detector"] is True
+
+def test_analyze_valid_audio():
+    wav_bytes = create_test_wav_bytes(duration_sec=1.2, freq_hz=440.0)
+    files = {"file": ("test_speech.wav", wav_bytes, "audio/wav")}
+    data = {"language": "en"}
+    response = client.post("/api/analyze", files=files, data=data)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "success"
+    assert "analysis_id" in body
+    assert "authenticity" in body
+    assert "risk" in body
+    assert "evidence" in body
+    assert body["authenticity"]["classification"] in ["REAL", "FAKE", "SUSPICIOUS"]
+    assert 0 <= body["risk"]["score"] <= 100
+
+def test_analyze_empty_file_rejected():
+    files = {"file": ("empty.wav", b"", "audio/wav")}
+    response = client.post("/api/analyze", files=files)
+    assert response.status_code == 400
+    body = response.json()
+    assert "empty" in body["detail"].lower()
+
+def test_analyze_unsupported_file_rejected():
+    files = {"file": ("document.exe", b"executable_binary_data", "application/octet-stream")}
+    response = client.post("/api/analyze", files=files)
+    assert response.status_code == 400
+    body = response.json()
+    assert "unsupported" in body["detail"].lower()
+
+def test_speaker_verification_endpoint():
+    wav_a = create_test_wav_bytes(duration_sec=1.0, freq_hz=300.0)
+    wav_b = create_test_wav_bytes(duration_sec=1.0, freq_hz=300.0)
+    files = {
+        "reference_file": ("ref.wav", wav_a, "audio/wav"),
+        "incoming_file": ("incoming.wav", wav_b, "audio/wav"),
+    }
+    data = {"threshold": "0.75"}
+    response = client.post("/api/verify-speaker", files=files, data=data)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "success"
+    assert "similarity" in body
+    assert "match" in body
+    assert body["match"] is True
+
+def test_replay_detection_endpoint():
+    wav_bytes = create_test_wav_bytes(duration_sec=1.0, freq_hz=500.0)
+    files = {"file": ("mic_recording.wav", wav_bytes, "audio/wav")}
+    response = client.post("/api/detect-replay", files=files)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "success"
+    assert "probability" in body
+    assert "is_replay" in body
+
+def test_call_shield_endpoints():
+    # Incidents list
+    inc_res = client.get("/api/v1/call-shield/incidents")
+    assert inc_res.status_code == 200
+    assert "incidents" in inc_res.json()
+
+    # Threat assessment
+    threat_res = client.post(
+        "/api/v1/call-shield/analyze-threat",
+        data={"category": "Digital Arrest Authority Scam", "caller_phone": "+91 99999 88888", "language": "hi"},
+    )
+    assert threat_res.status_code == 200
+    body = threat_res.json()
+    assert "threat_score" in body
+    assert "recommendation" in body
+
+def test_analysis_history():
+    res = client.get("/api/history")
+    assert res.status_code == 200
+    assert isinstance(res.json(), list)

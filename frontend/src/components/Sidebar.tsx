@@ -9,7 +9,8 @@ import {
   Cpu,
   Settings,
   LogOut,
-  User as UserIcon
+  User as UserIcon,
+  Radio
 } from 'lucide-react';
 import type { User as UserType } from '../services/api';
 
@@ -32,6 +33,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'call-shield', label: 'Call Shield', icon: ShieldAlert, badge: 'NEW', highlight: true },
     { id: 'audio-analysis', label: 'Audio Analysis', icon: FileAudio },
     { id: 'multilingual', label: 'Multilingual Voice', icon: Globe, badge: 'NEW' },
+    { id: 'attack-sim', label: 'Attack Simulation', icon: Radio, badge: 'SIH DEMO', highlight: true },
     { id: 'analytics', label: 'Fraud Analytics & Incidents', icon: BarChart3 },
     { id: 'ai-models', label: 'AI Models', icon: Cpu },
     { id: 'settings', label: 'Settings', icon: Settings },

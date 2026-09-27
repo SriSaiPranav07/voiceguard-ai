@@ -11,14 +11,20 @@ import { MultilingualAnalysis } from './pages/MultilingualAnalysis';
 import { Analytics } from './pages/Analytics';
 import { AIModels } from './pages/AIModels';
 import { Settings } from './pages/Settings';
+import { AttackSimulation } from './pages/AttackSimulation';
 import type { User } from './services/api';
 
 export function App() {
-  const [currentView, setCurrentView] = useState<string>('landing');
-  const [pendingTargetView, setPendingTargetView] = useState<string>('overview');
+  const [currentView, setCurrentView] = useState<string>('live-detection');
+  const [pendingTargetView, setPendingTargetView] = useState<string>('live-detection');
   
-  // Initial state is unauthenticated (null) so user must authenticate via Gmail/Mobile OTP
-  const [user, setUser] = useState<User | null>(null);
+  // Demo mode: auto-authenticated for direct access
+  const [user, setUser] = useState<User | null>({
+    id: 'demo-user',
+    name: 'Demo User',
+    email: 'demo@voiceguard.ai',
+    role: 'analyst',
+  });
 
   const navigateProtected = (targetView: string) => {
     if (!user) {
@@ -80,6 +86,7 @@ export function App() {
               onStartLive={() => navigateProtected('live-detection')}
               onAnalyzeRecording={() => navigateProtected('audio-analysis')}
               onSelectCallShield={() => navigateProtected('call-shield')}
+              onSelectAttackSim={() => navigateProtected('attack-sim')}
             />
           )}
 
@@ -90,6 +97,8 @@ export function App() {
           {currentView === 'audio-analysis' && <AudioAnalysis />}
 
           {currentView === 'multilingual' && <MultilingualAnalysis />}
+
+          {currentView === 'attack-sim' && <AttackSimulation />}
 
           {currentView === 'analytics' && <Analytics />}
 
