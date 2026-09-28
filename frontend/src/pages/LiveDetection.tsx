@@ -48,12 +48,13 @@ export const LiveDetection: React.FC = () => {
   const animFrameRef = useRef<number | null>(null);
   const pausedRef = useRef(false);
   const pcmBufferRef = useRef<Float32Array[]>([]);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const processorRef = useRef<AudioNode | null>(null);
   const chunkTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordingActiveRef = useRef(false);
   const analysisInFlightRef = useRef(false);
   const analysisAbortRef = useRef<AbortController | null>(null);
   const lastCaptureUiUpdateRef = useRef(0);
+  const lastLevelUiUpdateRef = useRef(0);
   const SR = 16000;
 
   useEffect(() => { pausedRef.current = isPaused; }, [isPaused]);
@@ -158,7 +159,12 @@ export const LiveDetection: React.FC = () => {
         audio: { sampleRate: { ideal: SR }, channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
       });
       mediaStreamRef.current = stream;
-      const audioCtx = new AudioContext({ sampleRate: SR });
+      let audioCtx: AudioContext;
+      try {
+        audioCtx = new AudioContext({ sampleRate: SR });
+      } catch {
+        audioCtx = new AudioContext();
+      }
       audioContextRef.current = audioCtx;
       await audioCtx.resume();
       if (audioCtx.state !== 'running') {
@@ -168,21 +174,9 @@ export const LiveDetection: React.FC = () => {
       const analyser = audioCtx.createAnalyser();
       analyser.fftSize = 256;
       source.connect(analyser);
-      const proc = audioCtx.createScriptProcessor(4096, 1, 1);
-      processorRef.current = proc;
-      source.connect(proc);
-      // Keep the ScriptProcessorNode in the live audio graph without feeding
-      // microphone audio back through the speakers.
-      const silentOutput = audioCtx.createGain();
-      silentOutput.gain.value = 0;
-      proc.connect(silentOutput);
-      silentOutput.connect(audioCtx.destination);
-      proc.onaudioprocess = (e) => {
+      const appendPcm = (samples: Float32Array) => {
         if (pausedRef.current) return;
-        const data = e.inputBuffer.getChannelData(0);
-        const copy = new Float32Array(data.length);
-        copy.set(data);
-        pcmBufferRef.current.push(copy);
+        pcmBufferRef.current.push(samples);
         const sampleRate = audioCtx.sampleRate || SR;
         const maxBufferedSamples = sampleRate * 20;
         let bufferedSamples = pcmBufferRef.current.reduce((sum, chunk) => sum + chunk.length, 0);
@@ -195,6 +189,31 @@ export const LiveDetection: React.FC = () => {
           setCapturedSeconds(bufferedSamples / sampleRate);
         }
       };
+      const silentOutput = audioCtx.createGain();
+      silentOutput.gain.value = 0;
+      if (audioCtx.audioWorklet) {
+        await audioCtx.audioWorklet.addModule(new URL('/pcm-capture-processor.js', window.location.href));
+        const captureNode = new AudioWorkletNode(audioCtx, 'voiceguard-pcm-capture', {
+          numberOfInputs: 1,
+          numberOfOutputs: 1,
+          outputChannelCount: [1],
+          processorOptions: { chunkSamples: Math.round(audioCtx.sampleRate * 0.5) },
+        });
+        captureNode.port.onmessage = (event: MessageEvent<Float32Array>) => appendPcm(event.data);
+        processorRef.current = captureNode;
+        source.connect(captureNode);
+        captureNode.connect(silentOutput);
+      } else {
+        // Compatibility path for older browsers without AudioWorklet support.
+        const proc = audioCtx.createScriptProcessor(4096, 1, 1);
+        proc.onaudioprocess = (event) => {
+          appendPcm(new Float32Array(event.inputBuffer.getChannelData(0)));
+        };
+        processorRef.current = proc;
+        source.connect(proc);
+        proc.connect(silentOutput);
+      }
+      silentOutput.connect(audioCtx.destination);
       recordingActiveRef.current = true;
       setIsRecording(true);
       setCapturedSeconds(0);
@@ -220,7 +239,11 @@ export const LiveDetection: React.FC = () => {
           } else {
             let sum = 0;
             for (let i = 0; i < bufLen; i++) sum += dataArr[i];
-            setAudioLevel(Math.round((sum / bufLen / 255) * 100));
+            const now = performance.now();
+            if (now - lastLevelUiUpdateRef.current > 150) {
+              lastLevelUiUpdateRef.current = now;
+              setAudioLevel(Math.round((sum / bufLen / 255) * 100));
+            }
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             const bw = (canvas.width / bufLen) * 2.5;
             let x = 0;
