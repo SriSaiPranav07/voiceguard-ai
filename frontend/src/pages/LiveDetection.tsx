@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Mic, Square, Pause, Play, RotateCcw,
   Wifi, WifiOff, AlertCircle, ShieldCheck, ShieldAlert, Activity,
 } from 'lucide-react';
-import { WS_BASE_URL, API_BASE_URL, fetchHealth } from '../services/api';
+import { apiUrl, fetchHealth } from '../services/api';
 
 function encodeWAV(samples: Float32Array, sampleRate: number): Blob {
   const byteCount = samples.length * 2;
@@ -27,7 +27,6 @@ function encodeWAV(samples: Float32Array, sampleRate: number): Blob {
 export const LiveDetection: React.FC = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
-  const [wsConnected, setWsConnected] = useState(false);
   const [apiConnected, setApiConnected] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -43,7 +42,6 @@ export const LiveDetection: React.FC = () => {
   const [primaryIndicators, setPrimaryIndicators] = useState<string[]>([]);
   const [verdict, setVerdict] = useState<'IDLE' | 'REAL' | 'FAKE' | 'SUSPICIOUS'>('IDLE');
 
-  const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -59,38 +57,9 @@ export const LiveDetection: React.FC = () => {
 
   useEffect(() => { pausedRef.current = isPaused; }, [isPaused]);
 
-  const connectWebSocket = useCallback(() => {
-    try {
-      const ws = new WebSocket(`${WS_BASE_URL}/ws/live-detection`);
-      ws.binaryType = 'arraybuffer';
-      ws.onopen = () => setWsConnected(true);
-      ws.onmessage = (ev) => {
-        try {
-          const d = JSON.parse(ev.data);
-          if (d.action === 'pong') return;
-          const numericResults = [d.confidence, d.synthetic_probability, d.human_probability, d.replay_probability, d.risk_score];
-          if (!['REAL', 'FAKE', 'SUSPICIOUS'].includes(d.classification) || !numericResults.every(Number.isFinite)) return;
-          const cls = d.classification as 'REAL' | 'FAKE' | 'SUSPICIOUS';
-          setVerdict(cls); setFrameCount(d.frame_index); setLatencyMs(d.latency_ms);
-          setConfidence(Math.round(d.confidence));
-          setSyntheticProb(Math.round(d.synthetic_probability));
-          setHumanProb(Math.round(d.human_probability));
-          setReplayProb(Math.round(d.replay_probability));
-          setRiskScore(Math.round(d.risk_score));
-          setStatusText(cls === 'FAKE' ? 'SYNTHETIC VOICE DETECTED' : cls === 'SUSPICIOUS' ? 'SUSPICIOUS PATTERN' : 'GENUINE SPEECH VERIFIED');
-          if (d.primary_indicators?.length) setPrimaryIndicators(d.primary_indicators);
-        } catch { /* ignore */ }
-      };
-      ws.onerror = () => setWsConnected(false);
-      ws.onclose = () => setWsConnected(false);
-      wsRef.current = ws;
-    } catch { setWsConnected(false); }
-  }, []);
-
   useEffect(() => {
-    connectWebSocket();
-    return () => { cleanup(); wsRef.current?.close(); };
-  }, [connectWebSocket]);
+    return () => cleanup();
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -143,7 +112,7 @@ export const LiveDetection: React.FC = () => {
       const fd = new FormData();
       fd.append('file', wav, 'live_chunk.wav');
       fd.append('language', 'auto');
-      const res = await fetch(`${API_BASE_URL}/api/analyze`, { method: 'POST', body: fd, signal: controller.signal });
+      const res = await fetch(apiUrl('/api/analyze-chunk'), { method: 'POST', body: fd, signal: controller.signal });
       if (!res.ok) {
         let detail = `HTTP ${res.status}`;
         try {
@@ -169,7 +138,7 @@ export const LiveDetection: React.FC = () => {
       setApiConnected(false);
       setStatusText('Analysis request failed');
       const reason = controller.signal.aborted ? 'Analysis timed out after 20 seconds.' : error instanceof Error ? error.message : 'Check the backend URL and deployment logs.';
-      setErrorMsg(`Could not analyze this audio window at ${API_BASE_URL || window.location.origin}/api/analyze. ${reason}`);
+      setErrorMsg(`Could not analyze this audio window at ${apiUrl('/api/analyze-chunk')}. ${reason}`);
     } finally {
       window.clearTimeout(timeoutId);
       analysisInFlightRef.current = false;
@@ -204,11 +173,6 @@ export const LiveDetection: React.FC = () => {
         const copy = new Float32Array(data.length);
         copy.set(data);
         pcmBufferRef.current.push(copy);
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          const i16 = new Int16Array(data.length);
-          for (let i = 0; i < data.length; i++) i16[i] = Math.max(-32768, Math.min(32767, data[i] * 32768));
-          wsRef.current.send(i16.buffer);
-        }
       };
       recordingActiveRef.current = true;
       setIsRecording(true);
@@ -347,9 +311,8 @@ export const LiveDetection: React.FC = () => {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <div style={{ fontSize: '0.77rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--bg-tertiary)', padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-            {wsConnected ? <Wifi size={13} color="var(--accent-emerald)" /> : <WifiOff size={13} />}
-            WS: <strong style={{ color: wsConnected ? 'var(--accent-emerald)' : '#555' }}>{wsConnected ? 'LIVE' : 'OFF'}</strong>
-            &nbsp;|&nbsp; API: <strong style={{ color: apiConnected ? 'var(--accent-emerald)' : 'var(--accent-rose)' }}>{apiConnected ? 'ONLINE' : 'OFFLINE'}</strong>
+            {apiConnected ? <Wifi size={13} color="var(--accent-emerald)" /> : <WifiOff size={13} />}
+            API: <strong style={{ color: apiConnected ? 'var(--accent-emerald)' : 'var(--accent-rose)' }}>{apiConnected ? 'ONLINE' : 'OFFLINE'}</strong>
           </div>
 
           {isRecording ? (

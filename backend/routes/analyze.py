@@ -27,6 +27,7 @@ ANALYSIS_HISTORY = []
 MAX_HISTORY_ITEMS = 50
 
 @router.post("/api/analyze")
+@router.post("/api/analyze-chunk")
 @router.post("/analyze")
 async def analyze_audio(
     file: UploadFile = File(..., description="Incoming voice audio recording to evaluate"),

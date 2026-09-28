@@ -1,8 +1,12 @@
 // VoiceGuard AI — Frontend API Service
-// Leave VITE_API_URL unset for the same-origin Vercel API; configure it only for a separate backend.
+// VITE_API_URL is the backend origin in production; leave unset for same-origin deployments.
 
 const envApiUrl = import.meta.env.VITE_API_URL?.trim();
 export const API_BASE_URL = envApiUrl ? envApiUrl.replace(/\/+$/, '') : '';
+
+export function apiUrl(path: string): string {
+  return `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
+}
 
 export const WS_BASE_URL = (() => {
   const configuredWsUrl = import.meta.env.VITE_WS_URL?.trim();
@@ -134,7 +138,7 @@ export interface HealthResponse {
 
 export async function fetchHealth(): Promise<HealthResponse> {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/health`);
+    const res = await fetch(apiUrl('/api/health'));
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch {
@@ -157,7 +161,7 @@ export async function fetchHealth(): Promise<HealthResponse> {
 
 export async function loginUser(email: string, password: string, remember: boolean) {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/v1/auth/login`, {
+    const res = await fetch(apiUrl('/api/v1/auth/login'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, remember_me: remember }),
@@ -180,7 +184,7 @@ export async function analyzeAudioFile(
     formData.append('reference_file', referenceSpeakerFile);
   }
 
-  const res = await fetch(`${API_BASE_URL}/api/analyze`, {
+  const res = await fetch(apiUrl('/api/analyze'), {
     method: 'POST',
     body: formData,
   });
@@ -221,7 +225,7 @@ export async function verifySpeaker(
   formData.append('incoming_file', incomingFile);
   formData.append('threshold', threshold.toString());
 
-  const res = await fetch(`${API_BASE_URL}/api/verify-speaker`, {
+  const res = await fetch(apiUrl('/api/verify-speaker'), {
     method: 'POST',
     body: formData,
   });
@@ -244,7 +248,7 @@ export async function detectReplay(file: File): Promise<ReplayDetectionResult> {
   const formData = new FormData();
   formData.append('file', file);
 
-  const res = await fetch(`${API_BASE_URL}/api/detect-replay`, {
+  const res = await fetch(apiUrl('/api/detect-replay'), {
     method: 'POST',
     body: formData,
   });
@@ -269,7 +273,7 @@ export async function fetchIncidents(): Promise<{
   demo_notice: string;
 }> {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/v1/call-shield/incidents`);
+    const res = await fetch(apiUrl('/api/v1/call-shield/incidents'));
     if (res.ok) return await res.json();
   } catch {
     // fallback below
@@ -331,7 +335,7 @@ export async function analyzeCallThreat(
   if (file) formData.append('file', file);
 
   try {
-    const res = await fetch(`${API_BASE_URL}/api/v1/call-shield/analyze-threat`, {
+    const res = await fetch(apiUrl('/api/v1/call-shield/analyze-threat'), {
       method: 'POST',
       body: formData,
     });
@@ -344,7 +348,7 @@ export async function analyzeCallThreat(
 
 export async function fetchAnalysisHistory(): Promise<AudioAnalysisResult[]> {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/history`);
+    const res = await fetch(apiUrl('/api/history'));
     if (res.ok) return await res.json();
   } catch {
     // ignore

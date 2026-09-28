@@ -28,6 +28,7 @@ app = FastAPI(
 # Set CORS_ORIGINS to a comma-separated list when deploying to a different frontend host.
 allowed_origins = [origin.strip() for origin in os.environ.get("CORS_ORIGINS", "").split(",") if origin.strip()]
 allowed_origins.extend([
+    "https://voiceguard-ai-psn1.vercel.app",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:3000",

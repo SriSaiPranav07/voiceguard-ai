@@ -68,11 +68,11 @@ No validated evaluation results are available yet. Do not interpret synthetic de
 
 ## Deployment
 
-The combined Vercel project must use the repository root as its project root. Its build command clean-installs the root npm workspace, then builds Vite into `frontend/dist/`; [`api/index.py`](api/index.py) exposes FastAPI, and root [`requirements.txt`](requirements.txt) supplies its Python dependencies. [`vercel.json`](vercel.json) serves the built frontend, preserves SPA routes, and routes API requests to the Python function. The frontend uses same-origin `/api/...` requests by default. Verify a deployment at `/api/health` before testing microphone analysis.
+The combined Vercel project must use the repository root as its project root, install the root npm workspace, and build Vite into `frontend/dist/`. The Python function in [`api/index.py`](api/index.py) exposes FastAPI using the root [`requirements.txt`](requirements.txt). Vercel serves Python functions from `api/` directly; [`vercel.json`](vercel.json) only rewrites non-API paths to the SPA entry so `/api/*` reaches the function without rewrite ambiguity. Frontend API URLs are centralized and can use `VITE_API_URL` when the backend is deployed separately; leave it unset when using the same-origin Vercel function. Verify `/api/health` before testing microphone analysis.
 
 Live analysis uses the repository's deterministic signal-processing baseline. It is not a benchmark-validated trained anti-spoofing model; the displayed scores are heuristic estimates and must not be treated as reliable identity or fraud verdicts.
 
-The backend also allows all Vercel project deployment origins by default and supports explicit origins through `CORS_ORIGINS`. For local development, the Vite proxy forwards API and WebSocket requests to `localhost:8000`.
+The backend explicitly allows `https://voiceguard-ai-psn1.vercel.app`, other Vercel deployment origins, and explicit origins through `CORS_ORIGINS`. For local development, the Vite proxy forwards API and WebSocket requests to `localhost:8000`.
 
 ## Screenshots
 
@@ -109,6 +109,7 @@ Open the Vite URL shown in the terminal (by default, `http://localhost:5173`). T
 |---|---|---|
 | `GET` | `/api/health` | Backend/module status |
 | `POST` | `/api/analyze` | Analyze an uploaded audio file; optional `reference_file` and `language` fields |
+| `POST` | `/api/analyze-chunk` | Analyze one live WAV chunk through the same inference pipeline |
 | `POST` | `/api/verify-speaker` | Compare reference and incoming audio |
 | `POST` | `/api/detect-replay` | Return replay heuristic indicators |
 | `GET` | `/api/history` | Read current process's in-memory analysis history |
