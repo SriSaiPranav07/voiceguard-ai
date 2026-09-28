@@ -7,8 +7,6 @@ try:
     import soundfile as sf
 except Exception:
     sf = None
-from scipy import signal
-from scipy.io import wavfile
 from backend.utils.security import is_allowed_audio_file, MAX_FILE_SIZE_BYTES, safe_cleanup_file
 from backend.utils.logger import get_logger
 
@@ -70,19 +68,36 @@ class AudioProcessor:
                 except Exception:
                     data = None
 
-            # 2. Fallback to scipy.io.wavfile (standard for WAV)
+            # 2. Fallback to the standard library WAV decoder.
             if data is None:
                 try:
-                    sr_read, raw_arr = wavfile.read(temp_input)
-                    sr = sr_read
-                    if raw_arr.dtype == np.int16:
-                        data = (raw_arr / 32768.0).astype(np.float32)
-                    elif raw_arr.dtype == np.int32:
-                        data = (raw_arr / 2147483648.0).astype(np.float32)
-                    elif raw_arr.dtype == np.uint8:
-                        data = ((raw_arr.astype(np.float32) - 128.0) / 128.0).astype(np.float32)
-                    elif raw_arr.dtype in (np.float32, np.float64):
-                        data = raw_arr.astype(np.float32)
+                    with wave.open(temp_input, "rb") as wf:
+                        channels = wf.getnchannels()
+                        sample_width = wf.getsampwidth()
+                        sr = wf.getframerate()
+                        raw_bytes = wf.readframes(wf.getnframes())
+
+                    if sample_width == 1:
+                        raw_arr = np.frombuffer(raw_bytes, dtype=np.uint8)
+                        data = ((raw_arr.astype(np.float32) - 128.0) / 128.0)
+                    elif sample_width == 2:
+                        raw_arr = np.frombuffer(raw_bytes, dtype="<i2")
+                        data = raw_arr.astype(np.float32) / 32768.0
+                    elif sample_width == 3:
+                        raw_arr = np.frombuffer(raw_bytes, dtype=np.uint8).reshape(-1, 3)
+                        values = (raw_arr[:, 0].astype(np.int32)
+                                  | (raw_arr[:, 1].astype(np.int32) << 8)
+                                  | (raw_arr[:, 2].astype(np.int32) << 16))
+                        values = np.where(values & 0x800000, values | ~0xFFFFFF, values)
+                        data = values.astype(np.float32) / 8388608.0
+                    elif sample_width == 4:
+                        raw_arr = np.frombuffer(raw_bytes, dtype="<i4")
+                        data = raw_arr.astype(np.float32) / 2147483648.0
+                    else:
+                        raise AudioProcessingError(f"Unsupported PCM sample width: {sample_width} bytes.")
+
+                    if channels > 1:
+                        data = data.reshape(-1, channels)
                 except Exception:
                     data = None
 
@@ -131,7 +146,9 @@ class AudioProcessor:
             # Resample to 16 kHz if necessary
             if sr != self.target_sr:
                 target_length = int(len(data) * (self.target_sr / sr))
-                data = signal.resample(data, target_length)
+                source_positions = np.arange(len(data), dtype=np.float64)
+                target_positions = np.linspace(0, len(data) - 1, target_length)
+                data = np.interp(target_positions, source_positions, data).astype(np.float32)
                 current_sr = self.target_sr
             else:
                 current_sr = sr

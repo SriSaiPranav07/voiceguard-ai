@@ -1,5 +1,4 @@
 import numpy as np
-from scipy import fft, signal
 
 class FeatureExtractor:
     """
@@ -103,7 +102,7 @@ class FeatureExtractor:
             strides=(y.strides[0] * self.hop_length, y.strides[0]),
         )
         windowed = frames * window
-        spectrum = fft.rfft(windowed, n=self.n_fft, axis=-1)
+        spectrum = np.fft.rfft(windowed, n=self.n_fft, axis=-1)
         return spectrum.T  # (n_bins, n_frames)
 
     def _build_mel_filterbank(self, n_mels: int, n_fft: int, sr: int) -> np.ndarray:
@@ -160,7 +159,7 @@ class FeatureExtractor:
         for i in range(0, len(waveform) - frame_len, hop):
             frame = waveform[i : i + frame_len]
             # Autocorrelation
-            corr = signal.correlate(frame, frame, mode="full")
+            corr = np.correlate(frame, frame, mode="full")
             corr = corr[len(corr) // 2 :]
             
             if len(corr) > max_lag:
