@@ -57,17 +57,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
         return { label: '● BASELINE ML MODEL', color: 'var(--accent-cyan)', bg: 'rgba(56, 189, 248, 0.15)' };
       case 'DEMO_MODE':
         return { label: '● DEMO MODE', color: 'var(--accent-amber)', bg: 'rgba(245, 158, 11, 0.15)' };
+      case 'MODEL_UNAVAILABLE':
+        return { label: '● CLASSIFIER UNAVAILABLE', color: 'var(--accent-amber)', bg: 'rgba(245, 158, 11, 0.15)' };
       default:
         return { label: '● BACKEND CONNECTING', color: 'var(--accent-cyan)', bg: 'rgba(56, 189, 248, 0.15)' };
     }
   };
 
   const badgeInfo = getModelBadge(health?.model_status);
-  const totalAnalysesCount = recentAnalyses.length > 0 ? 128 + recentAnalyses.length : 128;
-  const highRiskCount = recentAnalyses.filter(a => (a.risk?.score || 0) > 60).length + 38;
-  const avgRisk = recentAnalyses.length > 0
-    ? Math.round(recentAnalyses.reduce((acc, a) => acc + (a.risk?.score || 0), 0) / recentAnalyses.length)
-    : 44;
+  const totalAnalysesCount = recentAnalyses.length;
+  const scoredAnalyses = recentAnalyses.filter((a) => a.risk?.score != null);
+  const highRiskCount = scoredAnalyses.filter((a) => (a.risk?.score ?? 0) > 60).length;
+  const avgRisk = scoredAnalyses.length > 0
+    ? Math.round(scoredAnalyses.reduce((acc, a) => acc + (a.risk?.score ?? 0), 0) / scoredAnalyses.length)
+    : null;
 
   const handlePlayAudio = (filename: string) => {
     if (playingAudio === filename) {
@@ -136,7 +139,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span>
               <strong style={{ color: '#fff' }}>Engine Status:</strong>{' '}
-              {health?.ai_engine_online ? 'FastAPI Backend Online' : 'Connecting to VoiceGuard Engine'} (
+              {health?.api_online ? 'FastAPI API Online · Authenticity model unavailable' : 'Connecting to VoiceGuard API'} (
               {health?.model_version || 'v1.0.0-SIH2026'}).
             </span>
           </div>
@@ -190,7 +193,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </div>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
               <div style={{ fontSize: '2.2rem', fontWeight: 800, color: 'var(--accent-rose)', fontFamily: 'var(--font-mono)' }}>
-                {highRiskCount}
+                {scoredAnalyses.length === 0 ? 'N/A' : highRiskCount}
               </div>
               <div style={{ padding: '8px', borderRadius: '8px', background: 'rgba(244, 63, 94, 0.1)', color: 'var(--accent-rose)' }}>
                 <AlertTriangle size={22} />
@@ -204,8 +207,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <span className="badge-demo">FUSION</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-              <div style={{ fontSize: '2.2rem', fontWeight: 800, color: avgRisk > 50 ? 'var(--accent-amber)' : 'var(--accent-emerald)', fontFamily: 'var(--font-mono)' }}>
-                {avgRisk}
+              <div style={{ fontSize: '2.2rem', fontWeight: 800, color: avgRisk == null ? 'var(--text-muted)' : avgRisk > 50 ? 'var(--accent-amber)' : 'var(--accent-emerald)', fontFamily: 'var(--font-mono)' }}>
+                {avgRisk ?? 'N/A'}
                 <span style={{ fontSize: '1rem', color: 'var(--text-muted)' }}>/100</span>
               </div>
               <div style={{ padding: '8px', borderRadius: '8px', background: 'rgba(255, 255, 255, 0.05)', color: 'var(--accent-amber)' }}>
@@ -469,15 +472,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         fontSize: '0.7rem',
                         padding: '2px 8px',
                         borderRadius: '4px',
-                        background: inc.status === 'CRITICAL_ALERT' ? 'rgba(244, 63, 94, 0.2)' : 'rgba(245, 158, 11, 0.2)',
-                        color: inc.status === 'CRITICAL_ALERT' ? 'var(--accent-rose)' : 'var(--accent-amber)',
+                      background: 'rgba(148, 163, 184, 0.15)',
+                      color: 'var(--text-muted)',
                         fontWeight: 700,
                       }}
                     >
                       {inc.category}
                     </span>
                     <span style={{ fontSize: '0.7rem', color: 'var(--accent-emerald)', fontWeight: 600 }}>
-                      Lang: {inc.detected_language}
+                      {inc.status === 'SIMULATION' ? 'SIMULATION' : `Language: ${inc.detected_language || 'N/A'}`}
                     </span>
                   </div>
                   <div
@@ -490,13 +493,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    "{inc.transcript_snippet}"
+                    {inc.transcript_snippet || 'Fictional scenario record; no transcript or model result is available.'}
                   </div>
                 </div>
 
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--accent-rose)', fontFamily: 'var(--font-mono)' }}>
-                    {inc.deepfake_risk}%
+                    {inc.deepfake_risk == null ? 'N/A' : `${inc.deepfake_risk}%`}
                   </div>
                   <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Deepfake Risk</div>
                 </div>

@@ -18,17 +18,19 @@ export const CallShield: React.FC = () => {
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<any | null>(null);
+  const [errorMsg, setErrorMsg] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setAnalysisResult(null);
+    setErrorMsg('');
 
     try {
       const res = await analyzeCallThreat(category, callerPhone, language, audioFile || undefined);
       setAnalysisResult(res);
     } catch (err) {
-      console.error(err);
+      setErrorMsg(err instanceof Error ? err.message : 'Threat analysis request failed.');
     } finally {
       setLoading(false);
     }
@@ -45,12 +47,12 @@ export const CallShield: React.FC = () => {
           </h3>
         </div>
         <p style={{ color: 'var(--text-secondary)', marginTop: '6px', fontSize: '0.9rem' }}>
-          Analyze suspicious voice calls for deepfake impersonation, extortion scripts, and financial deception across English, Telugu, and Hindi.
+          Review an uploaded recording with available acoustic checks. Contextual conversation analysis, speech recognition, and validated impersonation detection are not configured.
         </p>
         <div style={{ marginTop: '12px', fontSize: '0.75rem', color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '6px' }}>
           <AlertTriangle size={14} />
           <span>
-            <strong>SECURITY GUIDANCE:</strong> Acoustic anomaly scoring and threat pattern indicators provide probabilistic risk guidance for SOC operators.
+            <strong>CAPABILITY STATUS:</strong> Current outputs are acoustic measurements only. This panel does not infer scam intent or a caller’s identity.
           </span>
         </div>
       </div>
@@ -292,6 +294,8 @@ export const CallShield: React.FC = () => {
       )}
 
       {/* Analysis Result Display */}
+      {errorMsg && <div role="alert" className="glass-panel" style={{ padding: '16px', color: 'var(--accent-rose)' }}>{errorMsg}</div>}
+
       {analysisResult && (
         <div className="glass-panel" style={{ padding: '28px', borderLeft: '4px solid var(--accent-rose)' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
@@ -304,8 +308,8 @@ export const CallShield: React.FC = () => {
                 fontWeight: 700,
                 padding: '4px 10px',
                 borderRadius: '6px',
-                background: (analysisResult.threat_score || 85) > 60 ? 'rgba(244, 63, 94, 0.2)' : 'rgba(16, 185, 129, 0.2)',
-                color: (analysisResult.threat_score || 85) > 60 ? 'var(--accent-rose)' : 'var(--accent-emerald)',
+                background: 'rgba(148, 163, 184, 0.15)',
+                color: 'var(--text-muted)',
               }}
             >
               {analysisResult.status || 'THREAT EVALUATED'}
@@ -316,21 +320,21 @@ export const CallShield: React.FC = () => {
             <div style={{ background: 'var(--bg-tertiary)', padding: '16px', borderRadius: '8px' }}>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Threat Score</div>
               <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--accent-rose)', fontFamily: 'var(--font-mono)' }}>
-                {analysisResult.threat_score || 88}/100
+              {analysisResult.threat_score == null ? 'N/A' : `${analysisResult.threat_score}/100`}
               </div>
             </div>
 
             <div style={{ background: 'var(--bg-tertiary)', padding: '16px', borderRadius: '8px' }}>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Voice Deepfake Risk</div>
               <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--accent-rose)', fontFamily: 'var(--font-mono)' }}>
-                {analysisResult.deepfake_risk || 91.4}%
+                {analysisResult.deepfake_risk == null ? 'N/A' : `${analysisResult.deepfake_risk}%`}
               </div>
             </div>
 
             <div style={{ background: 'var(--bg-tertiary)', padding: '16px', borderRadius: '8px' }}>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Detected Vector</div>
               <div style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', marginTop: '4px' }}>
-                {analysisResult.vector_detail || category}
+                {analysisResult.category || category}
               </div>
             </div>
           </div>

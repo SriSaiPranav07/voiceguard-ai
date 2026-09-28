@@ -263,6 +263,8 @@ export const AudioAnalysis: React.FC = () => {
                   ? 'var(--accent-rose)'
                   : result.authenticity.classification === 'SUSPICIOUS' || result.risk?.level === 'MEDIUM'
                   ? 'var(--accent-amber)'
+                  : result.authenticity.classification === 'UNAVAILABLE' || result.risk?.level === 'UNAVAILABLE'
+                  ? 'var(--text-muted)'
                   : 'var(--accent-emerald)'
               }`,
               display: 'flex',
@@ -276,7 +278,7 @@ export const AudioAnalysis: React.FC = () => {
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 {result.authenticity.classification === 'FAKE' ? (
                   <ShieldAlert size={36} color="var(--accent-rose)" />
-                ) : (
+                ) : result.authenticity.classification === 'UNAVAILABLE' ? null : (
                   <ShieldCheck size={36} color="var(--accent-emerald)" />
                 )}
                 <div>
@@ -296,7 +298,7 @@ export const AudioAnalysis: React.FC = () => {
                           : 'var(--accent-emerald)',
                     }}
                   >
-                    {result.authenticity.classification} VOICE DETECTED
+                    {result.authenticity.classification === 'UNAVAILABLE' ? 'CLASSIFICATION UNAVAILABLE' : `${result.authenticity.classification} VOICE DETECTED`}
                   </h2>
                 </div>
               </div>
@@ -307,9 +309,9 @@ export const AudioAnalysis: React.FC = () => {
 
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontSize: '2.2rem', fontWeight: 900, color: '#fff', fontFamily: 'var(--font-mono)' }}>
-                {result.authenticity.model_confidence}%
+                {result.authenticity.model_confidence == null ? 'N/A' : `${result.authenticity.model_confidence}%`}
               </div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Model Confidence Probability</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Model Confidence</div>
               <button
                 onClick={() => generateAnalysisPDF(result)}
                 style={{
@@ -342,21 +344,21 @@ export const AudioAnalysis: React.FC = () => {
               <div style={{ background: 'var(--bg-tertiary)', padding: '16px', borderRadius: '10px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', fontWeight: 700, marginBottom: '6px' }}>
                   <span style={{ color: 'var(--text-secondary)' }}>VOICE AUTHENTICITY</span>
-                  <span style={{ color: result.authenticity.synthetic_speech_probability > 50 ? 'var(--accent-rose)' : 'var(--accent-emerald)' }}>
-                    {result.authenticity.human_speech_probability}%
+                  <span style={{ color: 'var(--text-muted)' }}>
+                    {result.authenticity.human_speech_probability == null ? 'N/A' : `${result.authenticity.human_speech_probability}%`}
                   </span>
                 </div>
                 <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.08)', borderRadius: '4px', overflow: 'hidden' }}>
                   <div
                     style={{
-                      width: `${result.authenticity.human_speech_probability}%`,
+                      width: `${result.authenticity.human_speech_probability ?? 0}%`,
                       height: '100%',
-                      background: result.authenticity.synthetic_speech_probability > 50 ? 'var(--accent-rose)' : 'var(--accent-emerald)',
+                      background: 'var(--text-muted)',
                     }}
                   />
                 </div>
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '6px' }}>
-                  Synthetic probability: {result.authenticity.synthetic_speech_probability}%
+                  Synthetic probability: {result.authenticity.synthetic_speech_probability == null ? 'N/A' : `${result.authenticity.synthetic_speech_probability}%`}
                 </div>
               </div>
 
@@ -365,22 +367,22 @@ export const AudioAnalysis: React.FC = () => {
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', fontWeight: 700, marginBottom: '6px' }}>
                   <span style={{ color: 'var(--text-secondary)' }}>SPEAKER SIMILARITY</span>
                   <span style={{ color: 'var(--accent-cyan)' }}>
-                    {result.speaker_verification?.available
-                      ? `${Math.round(result.speaker_verification.similarity * 100)}%`
-                      : 'N/A (No Reference)'}
+                    {result.speaker_verification?.available && result.speaker_verification.similarity != null
+                      ? `Unvalidated ${Math.round(result.speaker_verification.similarity * 100)}%`
+                      : 'N/A'}
                   </span>
                 </div>
                 <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.08)', borderRadius: '4px', overflow: 'hidden' }}>
                   <div
                     style={{
-                      width: `${result.speaker_verification?.available ? Math.round(result.speaker_verification.similarity * 100) : 0}%`,
+                      width: `${result.speaker_verification?.available && result.speaker_verification.similarity != null ? Math.round(result.speaker_verification.similarity * 100) : 0}%`,
                       height: '100%',
                       background: 'var(--accent-cyan)',
                     }}
                   />
                 </div>
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '6px' }}>
-                  {result.speaker_verification?.explanation || 'Provide a reference voice to verify speaker biometrics.'}
+                  {result.speaker_verification?.explanation || 'Reference comparison is unavailable without a reference recording.'}
                 </div>
               </div>
 
@@ -388,16 +390,16 @@ export const AudioAnalysis: React.FC = () => {
               <div style={{ background: 'var(--bg-tertiary)', padding: '16px', borderRadius: '10px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', fontWeight: 700, marginBottom: '6px' }}>
                   <span style={{ color: 'var(--text-secondary)' }}>REPLAY INDICATORS</span>
-                  <span style={{ color: (result.authenticity.replay_probability || 0) > 25 ? 'var(--accent-amber)' : 'var(--accent-emerald)' }}>
-                    {Math.round(result.authenticity.replay_probability || 0)}%
+                  <span style={{ color: 'var(--text-muted)' }}>
+                    {result.replay_detection?.probability == null ? 'N/A' : `${Math.round(result.replay_detection.probability * 100)}%`}
                   </span>
                 </div>
                 <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.08)', borderRadius: '4px', overflow: 'hidden' }}>
                   <div
                     style={{
-                      width: `${Math.round(result.authenticity.replay_probability || 0)}%`,
+                      width: `${Math.round((result.replay_detection?.probability ?? 0) * 100)}%`,
                       height: '100%',
-                      background: (result.authenticity.replay_probability || 0) > 25 ? 'var(--accent-amber)' : 'var(--accent-emerald)',
+                      background: 'var(--text-muted)',
                     }}
                   />
                 </div>
@@ -413,20 +415,20 @@ export const AudioAnalysis: React.FC = () => {
                   <span
                     style={{
                       color:
-                        (result.risk?.score || 0) > 60
+                        (result.risk?.score ?? 0) > 60
                           ? 'var(--accent-rose)'
-                          : (result.risk?.score || 0) > 30
+                          : (result.risk?.score ?? 0) > 30
                           ? 'var(--accent-amber)'
                           : 'var(--accent-emerald)',
                     }}
                   >
-                    {result.risk?.level || 'LOW'} ({result.risk?.score || 0}/100)
+                    {result.risk?.score == null ? 'UNAVAILABLE' : `${result.risk.level} (${result.risk.score}/100)`}
                   </span>
                 </div>
                 <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.08)', borderRadius: '4px', overflow: 'hidden' }}>
                   <div
                     style={{
-                      width: `${result.risk?.score || 0}%`,
+                      width: `${result.risk?.score ?? 0}%`,
                       height: '100%',
                       background:
                         (result.risk?.score || 0) > 60
@@ -438,7 +440,7 @@ export const AudioAnalysis: React.FC = () => {
                   />
                 </div>
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '6px' }}>
-                  Calibrated fusion of authenticity, biometrics & replay risks.
+                  Risk scoring is unavailable until validated authenticity and replay models are configured.
                 </div>
               </div>
             </div>

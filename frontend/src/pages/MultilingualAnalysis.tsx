@@ -54,7 +54,7 @@ export const MultilingualAnalysis: React.FC = () => {
           </h3>
         </div>
         <p style={{ color: 'var(--text-secondary)', marginTop: '6px', fontSize: '0.9rem' }}>
-          Native speech & acoustic threat processing for <strong style={{ color: '#fff' }}>English, Telugu (తెలుగు), and Hindi (हिन्दी)</strong>.
+          The interface accepts English, Telugu (తెలుగు), or Hindi (हिन्दీ) as a selected language. Speech recognition, language identification, and validated spoof classification are not configured.
         </p>
       </div>
 
@@ -74,8 +74,7 @@ export const MultilingualAnalysis: React.FC = () => {
       >
         <AlertCircle size={18} />
         <span>
-          <strong>SIGNAL SEPARATION ARCHITECTURE:</strong> Language detection and deepfake classification operate as
-          independent signal layers. Language identity does NOT determine acoustic authenticity.
+          <strong>CAPABILITY STATUS:</strong> Language choice is metadata only. This service does not transcribe speech or infer its language.
         </span>
       </div>
 
@@ -216,12 +215,12 @@ export const MultilingualAnalysis: React.FC = () => {
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
             <div style={{ background: 'var(--bg-tertiary)', padding: '16px', borderRadius: '8px' }}>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Detected Language</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Selected Language</div>
               <div style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--accent-cyan)', fontFamily: 'var(--font-mono)' }}>
-                {result.detected_language} ({result.language_code?.toUpperCase() || 'EN'})
+                {result.requested_language || result.language_code?.toUpperCase() || 'Auto'}
               </div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--accent-emerald)', marginTop: '4px' }}>
-                Confidence: {result.language_confidence || 95}%
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                Language identification unavailable
               </div>
             </div>
 
@@ -238,7 +237,7 @@ export const MultilingualAnalysis: React.FC = () => {
                 {result.authenticity.classification}
               </div>
               <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                Synthetic Prob: {result.authenticity.synthetic_speech_probability}%
+                Synthetic probability: {result.authenticity.synthetic_speech_probability == null ? 'N/A' : `${result.authenticity.synthetic_speech_probability}%`}
               </div>
             </div>
 
@@ -248,24 +247,24 @@ export const MultilingualAnalysis: React.FC = () => {
                 style={{
                   fontSize: '1.3rem',
                   fontWeight: 800,
-                  color: (result.risk?.score || 0) > 50 ? 'var(--accent-rose)' : 'var(--accent-emerald)',
+                  color: result.risk?.score == null ? 'var(--text-muted)' : result.risk.score > 50 ? 'var(--accent-rose)' : 'var(--accent-emerald)',
                   fontFamily: 'var(--font-mono)',
                 }}
               >
-                {result.risk?.score || 0} / 100
+                {result.risk?.score == null ? 'N/A' : `${result.risk.score} / 100`}
               </div>
               <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                Level: {result.risk?.level || 'LOW'}
+                Level: {result.risk?.level || 'UNAVAILABLE'}
               </div>
             </div>
           </div>
 
           <div style={{ background: 'var(--bg-tertiary)', padding: '16px', borderRadius: '8px' }}>
             <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '4px' }}>
-              Speech Transcription ({result.detected_language})
+              Speech Transcription
             </div>
             <div style={{ fontSize: '0.95rem', color: '#fff', fontStyle: 'italic' }}>
-              "{result.transcript || 'Speech processed across regional acoustic model.'}"
+              {result.transcript || 'Not available: no speech recognition model is configured.'}
             </div>
           </div>
         </div>

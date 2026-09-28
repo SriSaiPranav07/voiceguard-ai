@@ -60,12 +60,12 @@ def test_feature_extractor_outputs():
     assert "high_freq_ratio" in features
     assert features["spectral_centroid_mean"] > 0
 
-def test_deepfake_detector_classification():
+def test_deepfake_detector_does_not_claim_unvalidated_classification():
     detector = DeepfakeDetector()
     features = {
-        "high_freq_ratio": 0.001,  # Severe cutoff -> synthetic indicator
+        "high_freq_ratio": 0.001,
         "spectral_rolloff_mean": 2800.0,
-        "pitch_jitter": 0.001,      # Monotonic -> synthetic indicator
+        "pitch_jitter": 0.001,
         "f0_std": 2.0,
         "f0_mean": 130.0,
         "spectral_centroid_std": 150.0,
@@ -73,10 +73,12 @@ def test_deepfake_detector_classification():
     }
     result = detector.analyze(features)
 
-    assert result["label"] in ["synthetic", "suspicious", "genuine"]
-    assert result["classification"] in ["FAKE", "SUSPICIOUS", "REAL"]
-    assert 0.0 <= result["score"] <= 1.0
-    assert result["human_speech_probability"] + result["synthetic_speech_probability"] == pytest.approx(100.0, abs=0.2)
+    assert result["label"] == "unknown"
+    assert result["classification"] == "UNAVAILABLE"
+    assert result["score"] is None
+    assert result["human_speech_probability"] is None
+    assert result["synthetic_speech_probability"] is None
+    assert result["model_confidence"] is None
     assert len(result["evidence"]) > 0
 
 def test_speaker_verifier_similarity():
@@ -93,8 +95,9 @@ def test_speaker_verifier_similarity():
     }
     # Identity match: features_a vs features_a
     result_identical = verifier.verify(features_a, features_a)
-    assert result_identical["match"] is True
-    assert result_identical["similarity"] > 0.95
+    assert result_identical["available"] is False
+    assert result_identical["match"] is None
+    assert result_identical["similarity"] is None
 
     # Divergent speaker
     features_b = {
@@ -108,7 +111,7 @@ def test_speaker_verifier_similarity():
         "zero_crossing_rate": 0.20,
     }
     result_divergent = verifier.verify(features_a, features_b)
-    assert result_divergent["similarity"] < result_identical["similarity"]
+    assert result_divergent["available"] is False
 
 def test_replay_detector_analysis():
     detector = ReplayDetector(threshold=0.35)
@@ -123,4 +126,6 @@ def test_replay_detector_analysis():
 
     assert "probability" in result
     assert "is_replay" in result
-    assert isinstance(result["is_replay"], bool)
+    assert result["is_replay"] is None
+    assert result["probability"] is None
+    assert isinstance(result["measurements"], dict)

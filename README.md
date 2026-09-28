@@ -12,8 +12,9 @@ Voice cloning can make scam calls sound like a family member, colleague, or auth
 
 - Analyze uploaded WAV, MP3, FLAC, M4A, OGG, WEBM, AAC, and OPUS audio.
 - Inspect microphone audio through the live analysis interface.
-- Produce heuristic authenticity, speaker-similarity, replay, and combined risk scores.
-- Show acoustic indicators and suggested response steps.
+- Capture microphone audio in short WAV chunks and submit them to the same audio API.
+- Return audio metadata and measured spectral/pitch checks with explanations.
+- Report authenticity, replay, speaker identity, and overall risk as unavailable until validated models are configured.
 - Demonstrate threat scenarios, incident views, multilingual UI flows, and PDF reports.
 
 Some screens use sample or hardcoded incident data. The current backend does not perform speech transcription or reliable language identification.
@@ -37,16 +38,17 @@ See [docs/architecture.md](docs/architecture.md) for the detailed design.
 
 - **Frontend:** React 19, TypeScript, Vite, CSS, Lucide, jsPDF.
 - **Backend:** Python, FastAPI, Uvicorn, NumPy, SciPy, SoundFile.
-- **ML:** Handcrafted acoustic heuristics in the API; a separate NumPy logistic-regression baseline training script.
+- **ML:** Signal feature extraction is implemented. No trained anti-spoof, replay, or speaker model is loaded by API inference.
 - **Database:** None. Analysis history is held in process memory; incident records are sample data.
 
-## AI Model
+## AI Model and Evaluation
 
-- **Model:** Baseline acoustic rules for synthetic-voice and replay indicators; MFCC/spectral-vector cosine similarity for speaker comparison. The standalone logistic-regression training pipeline is not wired into API inference.
-- **Dataset:** No benchmark dataset is included or used for validated performance claims. `samples/` contains small demonstration audio files. The ML documentation describes external benchmarks such as ASVspoof; obtain and prepare those separately according to their terms.
-- **Features:** 13 MFCCs, spectral centroid/bandwidth/roll-off, zero-crossing rate, RMS energy, pitch statistics, and high-frequency energy ratio.
-- **Training:** `ml/train.py` accepts bonafide and spoof audio directories. With no dataset directories, it generates synthetic feature vectors; that mode is only a pipeline demonstration, not meaningful model training.
-- **Evaluation:** `ml/evaluate.py --benchmark` runs a synthetic metric-calculation demo. It does not measure generalization to real speech. No verified ROC-AUC or benchmark results are currently available.
+- **Current model status:** `MODEL_UNAVAILABLE`. API inference does not load a validated anti-spoof, replay, or speaker model. The `backend/models/weights.pkl` artifact was produced by the synthetic-data training fallback and is intentionally not used to classify uploaded audio.
+- **Current analysis:** Audio decoding, resampling, metadata, and acoustic feature extraction are implemented. The API returns measured checks only; it does not claim a human/synthetic label, speaker match, replay verdict, or risk score.
+- **Features:** The extractor computes 13 MFCCs, spectral centroid/bandwidth/roll-off, zero-crossing rate, RMS energy, pitch statistics, and high-frequency energy ratio. These measurements are not proof of synthetic or human speech.
+- **Dataset:** No benchmark dataset is included or used for validated performance claims. `samples/` contains demonstration audio only. Prepare licensed datasets such as ASVspoof separately before training or evaluation.
+- **Training:** `ml/train.py` accepts bonafide and spoof audio directories. Without both directories it generates synthetic feature vectors; those weights are not meaningful training and must not be used for detection.
+- **Evaluation:** No valid evaluation results are available. `ml/evaluate.py --benchmark` is a synthetic metric-calculation demonstration, not model evaluation. Accuracy, precision, recall, F1, ROC-AUC, and EER are therefore not established.
 
 ## Results
 
@@ -68,11 +70,11 @@ No validated evaluation results are available yet. Do not interpret synthetic de
 
 ## Deployment
 
-The combined Vercel project must use the repository root as its project root, install the root npm workspace, and build Vite into `frontend/dist/`. The Python function in [`api/index.py`](api/index.py) exposes FastAPI using the root [`requirements.txt`](requirements.txt). Vercel serves Python functions from `api/` directly; [`vercel.json`](vercel.json) only rewrites non-API paths to the SPA entry so `/api/*` reaches the function without rewrite ambiguity. Frontend API URLs are centralized and can use `VITE_API_URL` when the backend is deployed separately; leave it unset when using the same-origin Vercel function. Verify `/api/health` before testing microphone analysis.
+The combined Vercel project uses the repository root, installs the npm workspace, and builds Vite into `frontend/dist/`. The Python function in [`api/index.py`](api/index.py) exposes FastAPI using the root [`requirements.txt`](requirements.txt). The current production deployment routes `/api/*` to that function. Frontend API URLs are centralized; leave `VITE_API_URL` unset for same-origin Vercel deployment or set it to a separately deployed backend HTTPS origin. Check `/api/health` before testing microphone analysis. The health response distinguishes API availability from `model_loaded`; currently the API can be online while the classifier remains unavailable.
 
-Live analysis uses the repository's deterministic signal-processing baseline. It is not a benchmark-validated trained anti-spoofing model; the displayed scores are heuristic estimates and must not be treated as reliable identity or fraud verdicts.
+Live microphone analysis captures audio and sends WAV chunks to `/api/analyze-chunk`. It reports acoustic measurements, not an authenticity verdict, until validated model weights and evaluation are supplied.
 
-The backend explicitly allows `https://voiceguard-ai-psn1.vercel.app`, other Vercel deployment origins, and explicit origins through `CORS_ORIGINS`. For local development, the Vite proxy forwards API and WebSocket requests to `localhost:8000`.
+The backend allows `https://voiceguard-ai-psn1.vercel.app`, localhost development origins, and optional explicit origins through `CORS_ORIGINS`. For local development, the Vite proxy forwards API and WebSocket requests to `localhost:8000`.
 
 ## Screenshots
 
@@ -119,12 +121,13 @@ Open the Vite URL shown in the terminal (by default, `http://localhost:5173`). T
 
 ## Limitations
 
-- Detectors are heuristic baselines, not validated production anti-spoofing or biometric models.
+- The authenticity, replay, speaker, and combined risk classifiers are unavailable; no trained model is loaded.
 - No benchmark performance results, calibration study, or ROC-AUC measurement is available.
 - The standalone trained classifier is not used by the API detector.
 - Transcript and language-confidence response fields are placeholders; incident content is sample data.
 - History is in-memory, disappears on restart, and is not shared across server workers.
-- The live WebSocket path currently decodes incoming PCM bytes differently from the frontend's signed 16-bit PCM stream; live WebSocket scores may be unreliable.
+- Speech transcription, language identification, contextual scam detection, and live telephony integrations are not implemented.
+- Call Shield incident cards are explicitly fictional simulation records, not observed incidents.
 - This prototype should not be the sole basis for identity verification, financial decisions, emergency response, or law-enforcement action. Verify sensitive requests using an independently trusted channel.
 
 ## License

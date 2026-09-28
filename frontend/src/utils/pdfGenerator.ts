@@ -43,16 +43,16 @@ export function generateAnalysisPDF(data: AudioAnalysisResult) {
   doc.text(`File Hash (SHA-256): ${data.file_hash}`, 110, y);
   y += 6;
   doc.text(`Duration: ${data.duration}s | Rate: ${data.sample_rate}Hz`, 14, y);
-  doc.text(`Detected Language: ${data.detected_language} (${data.language_code.toUpperCase()})`, 110, y);
+  doc.text(`Selected Language: ${data.requested_language || data.language_code.toUpperCase()} | Identification: unavailable`, 110, y);
   y += 12;
 
   // Authenticity & Risk Scores Box
-  const riskScore = data.risk?.score ?? data.risk_engine?.overall_risk_score ?? 0;
-  const riskLevel = data.risk?.level ?? data.risk_engine?.risk_level ?? 'LOW';
+  const riskScore = data.risk?.score ?? data.risk_engine?.overall_risk_score ?? null;
+  const riskLevel = data.risk?.level ?? data.risk_engine?.risk_level ?? 'UNAVAILABLE';
   const primaryIndicators = data.evidence ?? data.risk?.factors ?? data.risk_engine?.primary_indicators ?? [];
   const recommendation = data.recommendation ?? data.risk?.recommendation ?? data.risk_engine?.recommendation ?? '';
 
-  const isHighRisk = riskScore > 60;
+  const isHighRisk = riskScore !== null && riskScore > 60;
   doc.setFillColor(isHighRisk ? 254 : 240, isHighRisk ? 242 : 253, isHighRisk ? 242 : 244);
   doc.rect(14, y, pageWidth - 28, 30, 'F');
   doc.setDrawColor(isHighRisk ? 239 : 16, isHighRisk ? 68 : 185, isHighRisk ? 68 : 129);
@@ -62,13 +62,13 @@ export function generateAnalysisPDF(data: AudioAnalysisResult) {
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(isHighRisk ? 185 : 4, isHighRisk ? 28 : 120, isHighRisk ? 28 : 87);
   doc.text(`CLASSIFICATION: ${data.authenticity.classification}`, 20, y + 10);
-  doc.text(`OVERALL RISK SCORE: ${riskScore} / 100 (${riskLevel})`, 110, y + 10);
+  doc.text(`OVERALL RISK SCORE: ${riskScore == null ? 'N/A' : `${riskScore} / 100`} (${riskLevel})`, 110, y + 10);
 
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(51, 65, 85);
-  doc.text(`Synthetic Probability: ${data.authenticity.synthetic_speech_probability}% | Human Probability: ${data.authenticity.human_speech_probability}%`, 20, y + 20);
-  doc.text(`Confidence Interval: ${data.authenticity.confidence_interval || 'N/A'}`, 110, y + 20);
+  doc.text(`Synthetic Probability: ${data.authenticity.synthetic_speech_probability == null ? 'N/A' : `${data.authenticity.synthetic_speech_probability}%`} | Human Probability: ${data.authenticity.human_speech_probability == null ? 'N/A' : `${data.authenticity.human_speech_probability}%`}`, 20, y + 20);
+  doc.text(`Model Confidence: ${data.authenticity.model_confidence == null ? 'N/A' : `${data.authenticity.model_confidence}%`}`, 110, y + 20);
 
   y += 40;
 
@@ -96,13 +96,13 @@ export function generateAnalysisPDF(data: AudioAnalysisResult) {
 
   // Speech Transcript Box
   doc.setFont('helvetica', 'bold');
-  doc.text('Speech Transcription Snippet', 14, y);
+  doc.text('Speech Transcription', 14, y);
   y += 6;
   doc.setFillColor(248, 250, 252);
   doc.rect(14, y, pageWidth - 28, 22, 'F');
   doc.setFont('helvetica', 'italic');
   doc.setTextColor(71, 85, 105);
-  doc.text(`"${data.transcript}"`, 20, y + 12, { maxWidth: pageWidth - 40 });
+  doc.text(data.transcript || 'Unavailable: no speech recognition model is configured.', 20, y + 12, { maxWidth: pageWidth - 40 });
 
   y += 32;
 
@@ -115,7 +115,7 @@ export function generateAnalysisPDF(data: AudioAnalysisResult) {
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(148, 163, 184);
   doc.text(`Engine: ${data.model_metadata.engine_version} | VoiceGuard Security SOC Platform`, 14, y);
-  doc.text(`DISCLAIMER: AI voice analysis outputs provide probabilistic threat scores for security guidance.`, 14, y + 5);
+  doc.text(`DISCLAIMER: This report contains acoustic measurements only; validated authenticity and replay classifiers are unavailable.`, 14, y + 5);
 
   doc.save(`VoiceGuard_Report_${data.analysis_id}.pdf`);
 }

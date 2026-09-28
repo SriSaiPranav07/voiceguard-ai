@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 from backend.app import app
+from backend.utils.security import MAX_FILE_SIZE_BYTES
 
 client = TestClient(app)
 
@@ -32,11 +33,14 @@ def test_health_endpoint():
     response = client.get("/api/health")
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "healthy"
-    assert data["ai_engine_online"] is True
+    assert data["status"] == "degraded"
+    assert data["service"] == "voiceguard-ai"
+    assert data["api_online"] is True
+    assert data["model_loaded"] is False
+    assert data["ai_engine_online"] is False
     assert "active_modules" in data
     assert data["active_modules"]["audio_preprocessor"] is True
-    assert data["active_modules"]["authenticity_detector"] is True
+    assert data["active_modules"]["authenticity_detector"] is False
 
 def test_analyze_valid_audio():
     wav_bytes = create_test_wav_bytes(duration_sec=1.2, freq_hz=440.0)
@@ -51,8 +55,40 @@ def test_analyze_valid_audio():
     assert "authenticity" in body
     assert "risk" in body
     assert "evidence" in body
-    assert body["authenticity"]["classification"] in ["REAL", "FAKE", "SUSPICIOUS"]
-    assert 0 <= body["risk"]["score"] <= 100
+    assert body["authenticity"]["classification"] == "UNAVAILABLE"
+    assert body["authenticity"]["synthetic_speech_probability"] is None
+    assert body["authenticity"]["human_speech_probability"] is None
+    assert body["authenticity"]["model_confidence"] is None
+    assert body["risk"]["score"] is None
+    assert body["risk"]["level"] == "UNAVAILABLE"
+    assert body["detected_language"] is None
+    assert body["language_identification_available"] is False
+    assert "transcript" not in body
+
+def test_analyze_chunk_uses_the_same_audio_analysis_pipeline():
+    wav_bytes = create_test_wav_bytes(duration_sec=1.0, freq_hz=330.0)
+    response = client.post(
+        "/api/analyze-chunk",
+        files={"file": ("microphone_chunk.wav", wav_bytes, "audio/wav")},
+        data={"language": "auto"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "success"
+    assert body["authenticity"]["classification"] == "UNAVAILABLE"
+    assert body["authenticity"]["measurements"]["high_freq_ratio"] is not None
+
+def test_analyze_corrupt_audio_returns_client_error():
+    response = client.post("/api/analyze", files={"file": ("broken.wav", b"not a wav", "audio/wav")})
+    assert response.status_code == 400
+
+def test_analyze_oversized_audio_is_rejected():
+    response = client.post(
+        "/api/analyze",
+        files={"file": ("large.wav", b"0" * (MAX_FILE_SIZE_BYTES + 1), "audio/wav")},
+    )
+    assert response.status_code == 400
 
 def test_analyze_empty_file_rejected():
     files = {"file": ("empty.wav", b"", "audio/wav")}
@@ -83,7 +119,9 @@ def test_speaker_verification_endpoint():
     assert body["status"] == "success"
     assert "similarity" in body
     assert "match" in body
-    assert body["match"] is True
+    assert body["available"] is False
+    assert body["match"] is None
+    assert body["similarity"] is None
 
 def test_replay_detection_endpoint():
     wav_bytes = create_test_wav_bytes(duration_sec=1.0, freq_hz=500.0)
@@ -93,8 +131,8 @@ def test_replay_detection_endpoint():
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "success"
-    assert "probability" in body
-    assert "is_replay" in body
+    assert body["probability"] is None
+    assert body["is_replay"] is None
 
 def test_call_shield_endpoints():
     # Incidents list

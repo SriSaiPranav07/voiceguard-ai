@@ -2,6 +2,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException
 from backend.services.audio_processor import AudioProcessor, AudioProcessingError
 from backend.services.feature_extractor import FeatureExtractor
 from backend.services.replay_detector import ReplayDetector
+from backend.utils.security import MAX_FILE_SIZE_BYTES
 
 router = APIRouter(tags=["Replay Attack Detection"])
 
@@ -19,7 +20,7 @@ async def detect_replay_endpoint(
     Analyzes physical channel characteristics, loudspeaker distortion, and room impulse reverberation.
     """
     try:
-        audio_bytes = await file.read()
+        audio_bytes = await file.read(MAX_FILE_SIZE_BYTES + 1)
         processed = processor.process_audio_bytes(audio_bytes, file.filename)
         features = extractor.extract_features(processed["waveform"])
         result = replay_detector.analyze(features, waveform=processed["waveform"])

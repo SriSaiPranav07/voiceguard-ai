@@ -38,33 +38,35 @@ export type ModelStatus = 'PRODUCTION_MODEL' | 'BASELINE_MODEL' | 'DEMO_MODE' | 
 export interface AuthenticityMetrics {
   label: 'genuine' | 'synthetic' | 'suspicious' | 'unknown';
   classification: string;
-  score: number; // 0.0 - 1.0 (confidence of synthetic / genuine)
-  human_speech_probability: number; // 0 - 100%
-  synthetic_speech_probability: number; // 0 - 100%
-  replay_probability: number; // 0 - 100%
+  score: number | null;
+  human_speech_probability: number | null;
+  synthetic_speech_probability: number | null;
+  replay_probability?: number | null;
   voice_conversion_probability?: number;
   confidence_interval?: string;
-  model_confidence: number;
+  model_confidence: number | null;
+  measurements?: Record<string, number | null>;
 }
 
 export interface SpeakerVerificationResult {
   available: boolean;
-  similarity: number; // 0.0 - 1.0
-  match: boolean;
+  similarity: number | null;
+  match: boolean | null;
   threshold: number;
   explanation: string;
 }
 
 export interface ReplayDetectionResult {
   available: boolean;
-  probability: number; // 0.0 - 1.0
-  is_replay: boolean;
+  probability: number | null;
+  is_replay: boolean | null;
+  measurements?: Record<string, number | null>;
   explanation: string;
 }
 
 export interface RiskEvaluation {
-  score: number; // 0 - 100
-  level: 'LOW' | 'MEDIUM' | 'HIGH';
+  score: number | null;
+  level: 'LOW' | 'MEDIUM' | 'HIGH' | 'UNAVAILABLE';
   factors: string[];
   recommendation: string;
 }
@@ -80,10 +82,12 @@ export interface AudioAnalysisResult {
   file_hash: string;
   speech_duration: number;
   vad_score: number;
-  detected_language: string;
+  detected_language: string | null;
+  requested_language?: string;
+  language_identification_available?: boolean;
   language_code: string;
-  language_confidence: number;
-  transcript: string;
+  language_confidence?: number | null;
+  transcript?: string | null;
   authenticity: AuthenticityMetrics;
   speaker_verification?: SpeakerVerificationResult;
   replay_detection?: ReplayDetectionResult;
@@ -111,18 +115,21 @@ export interface AudioAnalysisResult {
 export interface CallShieldIncidentItem {
   id: string;
   category: string;
-  caller_id: string;
-  detected_language: string;
-  language_code: string;
-  deepfake_risk: number;
-  threat_score: number;
-  transcript_snippet: string;
+  caller_id: string | null;
+  detected_language: string | null;
+  language_code: string | null;
+  deepfake_risk: number | null;
+  threat_score: number | null;
+  transcript_snippet: string | null;
   status: string;
   created_at: string;
 }
 
 export interface HealthResponse {
   status: string;
+  service: string;
+  api_online: boolean;
+  model_loaded: boolean;
   ai_engine_online: boolean;
   model_status: ModelStatus;
   model_version: string;
@@ -144,6 +151,9 @@ export async function fetchHealth(): Promise<HealthResponse> {
   } catch {
     return {
       status: 'offline',
+      service: 'voiceguard-ai',
+      api_online: false,
+      model_loaded: false,
       ai_engine_online: false,
       model_status: 'MODEL_UNAVAILABLE',
       model_version: 'VoiceGuard-v1.0.0-offline',
@@ -271,54 +281,19 @@ export async function fetchIncidents(): Promise<{
   incidents: CallShieldIncidentItem[];
   total_threats: number;
   demo_notice: string;
+  demo_only?: boolean;
 }> {
   try {
     const res = await fetch(apiUrl('/api/v1/call-shield/incidents'));
     if (res.ok) return await res.json();
   } catch {
-    // fallback below
+    // Do not replace unavailable incident data with fabricated records.
   }
   return {
-    total_threats: 6,
-    incidents: [
-      {
-        id: 'INC-8921',
-        category: 'Kidnapping / Extortion Threat',
-        caller_id: '+91 98765 43210',
-        detected_language: 'Telugu',
-        language_code: 'te',
-        deepfake_risk: 91.4,
-        threat_score: 94,
-        transcript_snippet: 'మీ అబ్బాయి మా స్వాధీనంలో ఉన్నాడు...',
-        status: 'CRITICAL_ALERT',
-        created_at: '2026-09-17T21:45:00Z',
-      },
-      {
-        id: 'INC-8994',
-        category: 'Digital Arrest Extortion',
-        caller_id: '+91 99887 76655',
-        detected_language: 'Hindi',
-        language_code: 'hi',
-        deepfake_risk: 94.8,
-        threat_score: 96,
-        transcript_snippet: 'हम सीबीआई मुख्यालय से बोल रहे हैं। आपके आधार नंबर पर संदिग्ध पार्सल मिला है।',
-        status: 'CRITICAL_ALERT',
-        created_at: '2026-09-17T22:18:00Z',
-      },
-      {
-        id: 'INC-8970',
-        category: 'Executive Voice Clone',
-        caller_id: '+1 (555) 019-8821',
-        detected_language: 'English',
-        language_code: 'en',
-        deepfake_risk: 89.5,
-        threat_score: 88,
-        transcript_snippet: 'I am currently in an urgent board meeting. Wire $45,000 to the vendor account.',
-        status: 'HIGH_RISK',
-        created_at: '2026-09-17T20:55:00Z',
-      },
-    ],
-    demo_notice: 'HISTORICAL CASE LOGS',
+    total_threats: 0,
+    incidents: [],
+    demo_notice: 'Incident service is unavailable. No live incident data is being shown.',
+    demo_only: false,
   };
 }
 
@@ -334,16 +309,21 @@ export async function analyzeCallThreat(
   formData.append('language', language);
   if (file) formData.append('file', file);
 
-  try {
-    const res = await fetch(apiUrl('/api/v1/call-shield/analyze-threat'), {
-      method: 'POST',
-      body: formData,
-    });
-    if (res.ok) return await res.json();
-    return { error: `HTTP ${res.status}` };
-  } catch {
-    return { error: 'Network error or service unavailable' };
+  const res = await fetch(apiUrl('/api/v1/call-shield/analyze-threat'), {
+    method: 'POST',
+    body: formData,
+  });
+  if (!res.ok) {
+    let detail = `Threat analysis failed: HTTP ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body.detail) detail = body.detail;
+    } catch {
+      // Keep the HTTP status when the server did not return JSON.
+    }
+    throw new Error(detail);
   }
+  return await res.json();
 }
 
 export async function fetchAnalysisHistory(): Promise<AudioAnalysisResult[]> {

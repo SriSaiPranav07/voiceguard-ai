@@ -16,6 +16,7 @@ import { fetchHealth, type User } from './services/api';
 
 export function App() {
   const [apiOnline, setApiOnline] = useState(false);
+  const [modelLoaded, setModelLoaded] = useState(false);
   const [currentView, setCurrentView] = useState<string>('live-detection');
   const [pendingTargetView, setPendingTargetView] = useState<string>('live-detection');
   
@@ -31,7 +32,10 @@ export function App() {
     let active = true;
     const checkApi = () => {
       fetchHealth().then((health) => {
-        if (active) setApiOnline(health.ai_engine_online);
+        if (active) {
+          setApiOnline(health.api_online);
+          setModelLoaded(health.model_loaded);
+        }
       });
     };
     checkApi();
@@ -84,6 +88,7 @@ export function App() {
         setCurrentView={(view) => navigateProtected(view)}
         user={user}
         apiOnline={apiOnline}
+        modelLoaded={modelLoaded}
         onLogout={handleLogout}
       />
 

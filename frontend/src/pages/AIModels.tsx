@@ -17,57 +17,51 @@ export const AIModels: React.FC = () => {
   const pipelineModules = [
     {
       name: 'Audio Preprocessing & Resampling',
-      tech: 'NumPy / SciPy / SoundFile',
+      tech: 'NumPy / SoundFile',
       status: 'ACTIVE PIPELINE',
       statusType: 'production',
       description:
         'Converts heterogeneous multi-format audio streams into uniform 16 kHz mono WAV, performs RMS amplitude normalization, silence trimming, and sanity validation against truncated or corrupt files.',
-      latency: '~8 ms',
     },
     {
       name: 'Spectral Feature Extraction Engine',
-      tech: 'Acoustic Signal Processing (SciPy / Librosa)',
+      tech: 'NumPy signal processing',
       status: 'ACTIVE PIPELINE',
       statusType: 'production',
       description:
         'Extracts 13 MFCCs, Mel-spectrogram energy banks, spectral centroid, spectral bandwidth, spectral roll-off (85%), zero crossing rate, RMS energy, and fundamental frequency (F0) pitch contour variance.',
-      latency: '~14 ms',
     },
     {
       name: 'Voice Authenticity / Anti-Spoofing Detector',
-      tech: 'Baseline Heuristic & Statistical Classifier',
-      status: health?.model_status === 'PRODUCTION_MODEL' ? 'PRODUCTION MODEL' : 'BASELINE ML MODEL',
-      statusType: 'baseline',
+      tech: 'No trained model configured',
+      status: 'UNAVAILABLE',
+      statusType: 'unavailable',
       description:
-        'Evaluates high-frequency roll-off (neural vocoder cutoff above 7.5 kHz), spectral phase discontinuity at synthesis frame boundaries, and pitch monotonicity jitter characteristic of deepfake voice clones.',
-      latency: '~12 ms',
+        'The API returns measured spectral and pitch checks only. It does not classify audio as human or synthetic or provide calibrated probabilities.',
     },
     {
       name: 'Speaker Biometric Verification Layer',
-      tech: 'MFCC Acoustic Fingerprint & Cosine Similarity',
-      status: 'BASELINE BIOMETRIC MODEL',
-      statusType: 'baseline',
+      tech: 'No trained speaker-embedding model configured',
+      status: 'UNAVAILABLE',
+      statusType: 'unavailable',
       description:
-        'Extracts speaker acoustic vocal tract embeddings from reference voice audio and calculates cosine similarity against incoming speech with a calibrated decision threshold (0.75). Distinct from authenticity detection.',
-      latency: '~10 ms',
+        'Speaker identity verification is not available. Reference recordings are not compared by a validated speaker model.',
     },
     {
       name: 'Replay Attack Acoustic Detector',
-      tech: 'Room Impulse & Transmission Channel Analyzer',
-      status: 'BASELINE REPLAY DETECTOR',
-      statusType: 'baseline',
+      tech: 'No validated replay model configured',
+      status: 'UNAVAILABLE',
+      statusType: 'unavailable',
       description:
-        'Analyzes secondary room reverberation, loudspeaker dynamic compression artifacts, and low-frequency spectral decay to flag playback from physical speakers.',
-      latency: '~9 ms',
+        'The API can return acoustic measurements, but it does not classify audio as replay or provide replay probabilities.',
     },
     {
       name: 'Multi-Factor Calibrated Risk Fusion Engine',
-      tech: 'Configurable Probabilistic Threat Evaluator',
-      status: 'ACTIVE ENGINE',
-      statusType: 'production',
+      tech: 'Unavailable until validated model outputs exist',
+      status: 'UNAVAILABLE',
+      statusType: 'unavailable',
       description:
-        'Synthesizes authenticity probabilities, speaker verification mismatch penalties, replay indicators, and detected threat patterns into a unified 0–100 risk score and actionable response tier (LOW, MEDIUM, HIGH).',
-      latency: '~2 ms',
+        'No overall risk score is returned because authenticity, speaker, replay, and contextual outputs are not validated or configured.',
     },
   ];
 
@@ -81,7 +75,7 @@ export const AIModels: React.FC = () => {
               <Cpu color="var(--accent-cyan)" /> AI Model Pipeline & Architectural Topology
             </h3>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '4px' }}>
-              Engineering specifications, active models, scientific signal processing layers, and transparent operational status.
+              Available signal processing and the actual status of each model-dependent feature.
             </p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -91,11 +85,11 @@ export const AIModels: React.FC = () => {
                 fontWeight: 700,
                 padding: '4px 10px',
                 borderRadius: '6px',
-                background: health?.ai_engine_online ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-                color: health?.ai_engine_online ? 'var(--accent-emerald)' : 'var(--accent-amber)',
+                background: health?.api_online && health?.model_loaded ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                color: health?.api_online && health?.model_loaded ? 'var(--accent-emerald)' : 'var(--accent-amber)',
               }}
             >
-              {health?.ai_engine_online ? '● ENGINE CONNECTED' : '● SYSTEM INITIALIZING'}
+              {health?.api_online ? (health.model_loaded ? '● MODEL LOADED' : '● API ONLINE · MODEL UNAVAILABLE') : '● API OFFLINE'}
             </span>
           </div>
         </div>
@@ -146,14 +140,13 @@ export const AIModels: React.FC = () => {
                     fontWeight: 800,
                     padding: '2px 8px',
                     borderRadius: '4px',
-                    background: mod.statusType === 'production' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(56, 189, 248, 0.15)',
-                    color: mod.statusType === 'production' ? 'var(--accent-emerald)' : 'var(--accent-cyan)',
+                    background: mod.statusType === 'production' ? 'rgba(16, 185, 129, 0.15)' : mod.statusType === 'unavailable' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(56, 189, 248, 0.15)',
+                    color: mod.statusType === 'production' ? 'var(--accent-emerald)' : mod.statusType === 'unavailable' ? 'var(--accent-amber)' : 'var(--accent-cyan)',
                   }}
                 >
                   {mod.status}
                 </span>
                 <span style={{ fontSize: '0.75rem', fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
-                  Latency: {mod.latency}
                 </span>
               </div>
               <h4 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#fff' }}>{mod.name}</h4>

@@ -19,6 +19,7 @@ interface SidebarProps {
   setCurrentView: (view: string) => void;
   user: UserType | null;
   apiOnline: boolean;
+  modelLoaded: boolean;
   onLogout: () => void;
 }
 
@@ -27,6 +28,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   setCurrentView,
   user,
   apiOnline,
+  modelLoaded,
   onLogout
 }) => {
   const menuItems = [
@@ -144,13 +146,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span className={`status-dot ${apiOnline ? '' : 'danger'}`}></span> AI Engine {apiOnline ? 'Online' : 'Offline'}
+            <span className={`status-dot ${modelLoaded ? '' : 'warning'}`}></span> Authenticity model {modelLoaded ? 'Loaded' : 'Unavailable'}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span className={`status-dot ${apiOnline ? '' : 'danger'}`}></span> API {apiOnline ? 'Connected' : 'Disconnected'}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span className={`status-dot ${apiOnline ? 'warning' : 'danger'}`}></span> Monitoring {apiOnline ? 'Ready' : 'Unavailable'}
+            <span className={`status-dot ${apiOnline ? 'warning' : 'danger'}`}></span> Acoustic checks {apiOnline ? 'Available' : 'Unavailable'}
           </div>
         </div>
       </div>

@@ -8,7 +8,7 @@ from backend.services.deepfake_detector import DeepfakeDetector
 from backend.services.speaker_verifier import SpeakerVerifier
 from backend.services.replay_detector import ReplayDetector
 from backend.services.risk_engine import RiskEngine
-from backend.utils.security import compute_file_hash
+from backend.utils.security import compute_file_hash, MAX_FILE_SIZE_BYTES
 from backend.utils.logger import get_logger
 
 logger = get_logger("analyze_route")
@@ -48,12 +48,22 @@ async def analyze_audio(
     analysis_id = f"VG-{str(uuid.uuid4())[:8].upper()}"
 
     try:
-        audio_bytes = await file.read()
+        audio_bytes = await file.read(MAX_FILE_SIZE_BYTES + 1)
+        if len(audio_bytes) > MAX_FILE_SIZE_BYTES:
+            raise AudioProcessingError(f"File size exceeds maximum allowed limit of {MAX_FILE_SIZE_BYTES // (1024 * 1024)} MB.")
+        logger.info("Audio analysis received id=%s bytes=%d", analysis_id, len(audio_bytes))
         file_hash = compute_file_hash(audio_bytes)
 
         # 1. Audio Preprocessing
         processed = processor.process_audio_bytes(audio_bytes, file.filename)
         waveform = processed["waveform"]
+        logger.info(
+            "Audio decoded id=%s duration_seconds=%.3f sample_rate=%d channels=%d",
+            analysis_id,
+            processed["duration"],
+            processed["sample_rate"],
+            processed["channels"],
+        )
 
         # 2. Feature Extraction
         features = extractor.extract_features(waveform)
@@ -68,7 +78,7 @@ async def analyze_audio(
         speaker_res = {"available": False, "similarity": 0.0, "match": False, "explanation": "No reference voice enrolled."}
         if reference_file is not None:
             try:
-                ref_bytes = await reference_file.read()
+                ref_bytes = await reference_file.read(MAX_FILE_SIZE_BYTES + 1)
                 ref_processed = processor.process_audio_bytes(ref_bytes, reference_file.filename)
                 ref_features = extractor.extract_features(ref_processed["waveform"])
                 speaker_res = verifier.verify(ref_features, features)
@@ -90,14 +100,15 @@ async def analyze_audio(
 
         processing_ms = int((time.perf_counter() - start_time) * 1000)
 
-        # Language resolution
+        # The selected UI language is not inferred from the audio. No ASR or
+        # language-identification model is configured in this service.
         lang_map = {
             "en": "English",
             "te": "Telugu",
             "hi": "Hindi",
             "auto": "Auto (English / Multilingual)",
         }
-        detected_language = lang_map.get(language.lower(), "Multilingual Acoustic Model")
+        requested_language = lang_map.get(language.lower(), "Auto (English / Multilingual)")
 
         # Compile explainable evidence list
         evidence_list = list(authenticity_res.get("evidence", []))
@@ -117,10 +128,10 @@ async def analyze_audio(
             "channels": processed["channels"],
             "speech_duration": processed["speech_duration"],
             "vad_score": processed["vad_score"],
-            "detected_language": detected_language,
+            "detected_language": None,
+            "requested_language": requested_language,
+            "language_identification_available": False,
             "language_code": language,
-            "language_confidence": 94.5,
-            "transcript": "Acoustic audio stream evaluated through VoiceGuard forensic signal pipeline.",
             "authenticity": authenticity_res,
             "speaker_verification": speaker_res,
             "replay_detection": replay_res,
@@ -129,7 +140,7 @@ async def analyze_audio(
             "recommendation": risk_res.get("recommendation"),
             "model_metadata": authenticity_res.get("model_metadata", {}),
             "processing_time_ms": processing_ms,
-            "confidence_disclaimer": "Probabilistic acoustic threat evaluation for cybersecurity SOC guidance.",
+            "confidence_disclaimer": "Acoustic measurements only. No validated anti-spoofing or replay classifier is configured.",
             # Backward compatibility aliases
             "risk_engine": {
                 "overall_risk_score": risk_res.get("score"),
@@ -144,13 +155,14 @@ async def analyze_audio(
         if len(ANALYSIS_HISTORY) > MAX_HISTORY_ITEMS:
             ANALYSIS_HISTORY.pop(0)
 
+        logger.info("Audio analysis completed id=%s elapsed_ms=%d model_status=%s", analysis_id, processing_ms, authenticity_res.get("model_metadata", {}).get("status"))
         return response_data
 
     except AudioProcessingError as ape:
         raise HTTPException(status_code=400, detail=str(ape))
     except Exception as e:
         logger.error(f"Analysis error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal analysis pipeline error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Audio analysis failed due to an internal server error.") from e
 
 @router.get("/api/history")
 @router.get("/history")

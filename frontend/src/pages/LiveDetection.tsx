@@ -34,13 +34,12 @@ export const LiveDetection: React.FC = () => {
   const [latencyMs, setLatencyMs] = useState(0);
   const [audioLevel, setAudioLevel] = useState(0);
   const [statusText, setStatusText] = useState('Idle');
-  const [confidence, setConfidence] = useState(0);
-  const [syntheticProb, setSyntheticProb] = useState(0);
-  const [humanProb, setHumanProb] = useState(0);
-  const [replayProb, setReplayProb] = useState(0);
-  const [riskScore, setRiskScore] = useState(0);
+  const [syntheticProb, setSyntheticProb] = useState<number | null>(null);
+  const [humanProb, setHumanProb] = useState<number | null>(null);
+  const [replayProb, setReplayProb] = useState<number | null>(null);
+  const [riskScore, setRiskScore] = useState<number | null>(null);
   const [primaryIndicators, setPrimaryIndicators] = useState<string[]>([]);
-  const [verdict, setVerdict] = useState<'IDLE' | 'REAL' | 'FAKE' | 'SUSPICIOUS'>('IDLE');
+  const [verdict, setVerdict] = useState<'IDLE' | 'REAL' | 'FAKE' | 'SUSPICIOUS' | 'UNAVAILABLE'>('IDLE');
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -65,7 +64,7 @@ export const LiveDetection: React.FC = () => {
     let active = true;
     const checkApi = () => {
       fetchHealth().then((health) => {
-        if (active) setApiConnected(health.ai_engine_online);
+        if (active) setApiConnected(health.api_online);
       });
     };
     checkApi();
@@ -75,15 +74,16 @@ export const LiveDetection: React.FC = () => {
 
   const applyResult = (data: any, latency: number) => {
     const auth = data.authenticity;
-    const cls = auth.classification as 'REAL' | 'FAKE' | 'SUSPICIOUS';
-    setSyntheticProb(Math.round(auth.synthetic_speech_probability));
-    setHumanProb(Math.round(auth.human_speech_probability));
-    setReplayProb(Math.round(data.replay_detection.probability * 100));
-    setRiskScore(Math.round(data.risk.score));
-    setConfidence(Math.round(auth.model_confidence));
+    const cls = auth.classification as 'REAL' | 'FAKE' | 'SUSPICIOUS' | 'UNAVAILABLE';
+    setSyntheticProb(Number.isFinite(auth.synthetic_speech_probability) ? Math.round(auth.synthetic_speech_probability) : null);
+    setHumanProb(Number.isFinite(auth.human_speech_probability) ? Math.round(auth.human_speech_probability) : null);
+    setReplayProb(Number.isFinite(data.replay_detection?.probability) ? Math.round(data.replay_detection.probability * 100) : null);
+    setRiskScore(Number.isFinite(data.risk?.score) ? Math.round(data.risk.score) : null);
     setVerdict(cls); setLatencyMs(latency);
     setFrameCount((p) => p + 1); setIsAnalyzing(false);
-    setStatusText(cls === 'FAKE' ? 'SYNTHETIC VOICE DETECTED' : cls === 'SUSPICIOUS' ? 'SUSPICIOUS PATTERN DETECTED' : 'GENUINE SPEECH VERIFIED');
+    setStatusText(cls === 'UNAVAILABLE'
+      ? 'Acoustic checks completed; no validated authenticity or replay model is configured.'
+      : cls === 'FAKE' ? 'SYNTHETIC VOICE DETECTED' : cls === 'SUSPICIOUS' ? 'SUSPICIOUS PATTERN DETECTED' : 'GENUINE SPEECH VERIFIED');
     setPrimaryIndicators(data.evidence ?? data.risk_engine?.primary_indicators ?? []);
   };
 
@@ -125,8 +125,7 @@ export const LiveDetection: React.FC = () => {
       }
       const data = await res.json();
       const auth = data?.authenticity;
-      const values = [auth?.synthetic_speech_probability, auth?.human_speech_probability, auth?.model_confidence, data?.replay_detection?.probability, data?.risk?.score];
-      if (!['REAL', 'FAKE', 'SUSPICIOUS'].includes(auth?.classification) || !values.every((value) => Number.isFinite(value))) {
+      if (!['REAL', 'FAKE', 'SUSPICIOUS', 'UNAVAILABLE'].includes(auth?.classification) || !Array.isArray(auth?.evidence)) {
         throw new Error('The backend returned an incomplete analysis result.');
       }
       applyResult(data, Math.round(performance.now() - t0));
@@ -254,8 +253,8 @@ export const LiveDetection: React.FC = () => {
   };
 
   const handleClear = () => {
-    setStatusText('Idle'); setVerdict('IDLE'); setConfidence(0);
-    setSyntheticProb(0); setHumanProb(0); setReplayProb(0); setRiskScore(0);
+    setStatusText('Idle'); setVerdict('IDLE');
+    setSyntheticProb(null); setHumanProb(null); setReplayProb(null); setRiskScore(null);
     setPrimaryIndicators([]); setFrameCount(0); setLatencyMs(0);
     setErrorMsg(''); setIsAnalyzing(false);
   };
@@ -266,10 +265,10 @@ export const LiveDetection: React.FC = () => {
     verdict === 'REAL' ? 'var(--accent-emerald)' : 'var(--text-muted)';
 
   const metrics = [
-    { label: 'AI Voice Probability', value: syntheticProb, unit: '%', highIsBad: true, threshold: 50 },
+    { label: 'Synthetic Speech Probability', value: syntheticProb, unit: '%', highIsBad: true, threshold: 50 },
     { label: 'Human Speech Probability', value: humanProb, unit: '%', highIsBad: false, threshold: 50 },
-    { label: 'Replay Attack Prob', value: replayProb, unit: '%', highIsBad: true, threshold: 25 },
-    { label: 'Fused Risk Score', value: riskScore, unit: '/100', highIsBad: true, threshold: 40 },
+    { label: 'Replay Probability', value: replayProb, unit: '%', highIsBad: true, threshold: 25 },
+    { label: 'Risk Score', value: riskScore, unit: '/100', highIsBad: true, threshold: 40 },
   ];
 
   return (
@@ -305,7 +304,7 @@ export const LiveDetection: React.FC = () => {
             </h2>
           </div>
           <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-            PCM capture → WAV encoding → Forensic AI pipeline → Real-time verdict
+            PCM capture → WAV encoding → measured acoustic checks → validated verdict when a model is available
           </p>
         </div>
 
@@ -390,30 +389,25 @@ export const LiveDetection: React.FC = () => {
              <Mic size={32} color="var(--text-muted)" />}
           </div>
           <div style={{ fontSize: '1.5rem', fontWeight: 900, fontFamily: 'var(--font-mono)', color: isPaused ? '#fbbf24' : verdictColor, marginBottom: '6px', lineHeight: 1.2 }}>
-            {isPaused ? 'PAUSED' : verdict}
+            {isPaused ? 'PAUSED' : verdict === 'UNAVAILABLE' ? 'NOT AVAILABLE' : verdict}
           </div>
           <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
             {isPaused ? 'Stream suspended' : statusText}
           </div>
-          {confidence > 0 && !isPaused && (
-            <div style={{ marginTop: '10px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              Confidence: <strong style={{ color: '#fff' }}>{confidence}%</strong>
-            </div>
-          )}
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
           {metrics.map((m) => {
-            const hi = m.value > m.threshold;
-            const col = m.highIsBad ? (hi ? 'var(--accent-rose)' : 'var(--accent-emerald)') : (hi ? 'var(--accent-emerald)' : 'var(--accent-amber)');
+            const hi = m.value !== null && m.value > m.threshold;
+            const col = m.value === null ? 'var(--text-muted)' : m.highIsBad ? (hi ? 'var(--accent-rose)' : 'var(--accent-emerald)') : (hi ? 'var(--accent-emerald)' : 'var(--accent-amber)');
             const idle = isPaused || verdict === 'IDLE';
             return (
               <div key={m.label} className="glass-panel" style={{ padding: '20px' }}>
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{m.label}</div>
                 <div style={{ fontSize: '1.8rem', fontWeight: 800, color: idle ? 'var(--text-muted)' : col, fontFamily: 'var(--font-mono)' }}>
-                  {idle ? '—' : `${m.value}${m.unit}`}
+                  {idle ? '—' : m.value === null ? 'N/A' : `${m.value}${m.unit}`}
                 </div>
-                {!idle && (
+                {!idle && m.value !== null && (
                   <div style={{ marginTop: '8px', background: 'var(--bg-primary)', borderRadius: '4px', height: '4px', overflow: 'hidden' }}>
                     <div style={{ width: `${Math.min(m.value, 100)}%`, height: '100%', background: col, borderRadius: '4px', transition: 'width 0.6s ease' }} />
                   </div>
