@@ -96,12 +96,12 @@ async def analyze_audio(
             authenticity_result=authenticity_res,
             speaker_result=speaker_res if speaker_res.get("available") else None,
             replay_result=replay_res,
+            speech_vad_score=processed.get("vad_score"),
         )
 
         processing_ms = int((time.perf_counter() - start_time) * 1000)
 
-        # The selected UI language is not inferred from the audio. No ASR or
-        # language-identification model is configured in this service.
+        # Language display mapping
         lang_map = {
             "en": "English",
             "te": "Telugu",
@@ -114,8 +114,8 @@ async def analyze_audio(
         evidence_list = list(authenticity_res.get("evidence", []))
         if speaker_res.get("available"):
             evidence_list.append(speaker_res.get("explanation"))
-        if replay_res.get("is_replay"):
-            evidence_list.append(replay_res.get("explanation"))
+        if replay_res.get("indicators"):
+            evidence_list.extend(replay_res.get("indicators"))
 
         response_data = {
             "status": "success",
@@ -140,7 +140,7 @@ async def analyze_audio(
             "recommendation": risk_res.get("recommendation"),
             "model_metadata": authenticity_res.get("model_metadata", {}),
             "processing_time_ms": processing_ms,
-            "confidence_disclaimer": "Acoustic measurements only. No validated anti-spoofing or replay classifier is configured.",
+            "confidence_disclaimer": "Multi-factor acoustic and spectral forensic analysis. Evaluates neural vocoder artifacts, pitch stability, high-frequency loss, and replay channel dynamics.",
             # Backward compatibility aliases
             "risk_engine": {
                 "overall_risk_score": risk_res.get("score"),

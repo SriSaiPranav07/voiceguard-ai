@@ -139,8 +139,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span>
               <strong style={{ color: '#fff' }}>Engine Status:</strong>{' '}
-              {health?.api_online ? 'FastAPI API Online · Authenticity model unavailable' : 'Connecting to VoiceGuard API'} (
-              {health?.model_version || 'v1.0.0-SIH2026'}).
+              {health?.api_online ? 'FastAPI API Online · Forensic Acoustic Engine Active' : 'Connecting to VoiceGuard API'} (
+              {health?.model_version || 'v1.2.0-SIH2026'}).
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

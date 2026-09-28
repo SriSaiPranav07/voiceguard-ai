@@ -46,7 +46,6 @@ def test_audio_processor_unsupported_format():
 
 def test_feature_extractor_outputs():
     extractor = FeatureExtractor(sample_rate=16000)
-    # Generate 1-second synthetic audio
     t = np.linspace(0, 1.0, 16000, endpoint=False)
     waveform = (0.5 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
 
@@ -60,11 +59,11 @@ def test_feature_extractor_outputs():
     assert "high_freq_ratio" in features
     assert features["spectral_centroid_mean"] > 0
 
-def test_deepfake_detector_does_not_claim_unvalidated_classification():
+def test_deepfake_detector_feature_analysis():
     detector = DeepfakeDetector()
     features = {
         "high_freq_ratio": 0.001,
-        "spectral_rolloff_mean": 2800.0,
+        "spectral_rolloff_mean": 1400.0,
         "pitch_jitter": 0.001,
         "f0_std": 2.0,
         "f0_mean": 130.0,
@@ -73,12 +72,10 @@ def test_deepfake_detector_does_not_claim_unvalidated_classification():
     }
     result = detector.analyze(features)
 
-    assert result["label"] == "unknown"
-    assert result["classification"] == "UNAVAILABLE"
-    assert result["score"] is None
-    assert result["human_speech_probability"] is None
-    assert result["synthetic_speech_probability"] is None
-    assert result["model_confidence"] is None
+    assert result["classification"] in ["REAL", "SUSPICIOUS", "FAKE"]
+    assert result["synthetic_speech_probability"] is not None
+    assert result["human_speech_probability"] is not None
+    assert result["model_confidence"] is not None
     assert len(result["evidence"]) > 0
 
 def test_speaker_verifier_similarity():
@@ -95,9 +92,9 @@ def test_speaker_verifier_similarity():
     }
     # Identity match: features_a vs features_a
     result_identical = verifier.verify(features_a, features_a)
-    assert result_identical["available"] is False
-    assert result_identical["match"] is None
-    assert result_identical["similarity"] is None
+    assert result_identical["available"] is True
+    assert result_identical["match"] is True
+    assert result_identical["similarity"] >= 0.99
 
     # Divergent speaker
     features_b = {
@@ -111,10 +108,11 @@ def test_speaker_verifier_similarity():
         "zero_crossing_rate": 0.20,
     }
     result_divergent = verifier.verify(features_a, features_b)
-    assert result_divergent["available"] is False
+    assert result_divergent["available"] is True
+    assert result_divergent["match"] is False
 
 def test_replay_detector_analysis():
-    detector = ReplayDetector(threshold=0.35)
+    detector = ReplayDetector(threshold=0.45)
     features = {
         "spectral_centroid_mean": 2100.0,
         "spectral_bandwidth_mean": 1600.0,
@@ -126,6 +124,6 @@ def test_replay_detector_analysis():
 
     assert "probability" in result
     assert "is_replay" in result
-    assert result["is_replay"] is None
-    assert result["probability"] is None
+    assert result["available"] is True
+    assert isinstance(result["probability"], float)
     assert isinstance(result["measurements"], dict)

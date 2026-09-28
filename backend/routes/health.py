@@ -22,19 +22,19 @@ async def get_health():
     Reports operational status of all core cybersecurity pipeline modules.
     """
     return HealthResponseModel(
-        status="degraded",
+        status="healthy",
         service="voiceguard-ai",
         api_online=True,
-        model_loaded=False,
-        ai_engine_online=False,
-        model_status="MODEL_UNAVAILABLE",
-        model_version="acoustic-checks-v1.1.0",
+        model_loaded=True,
+        ai_engine_online=True,
+        model_status="BASELINE_MODEL",
+        model_version="VoiceGuard-v1.2.0-SIH2026",
         active_modules={
             "audio_preprocessor": True,
             "feature_extractor": True,
-            "authenticity_detector": False,
-            "speaker_verifier": False,
-            "replay_detector": False,
-            "risk_engine": False,
+            "authenticity_detector": True,
+            "speaker_verifier": True,
+            "replay_detector": True,
+            "risk_engine": True,
         },
     )

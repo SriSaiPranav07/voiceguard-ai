@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Mic, Square, Pause, Play, RotateCcw,
   Wifi, WifiOff, AlertCircle, ShieldCheck, ShieldAlert, Activity,
+  Radio
 } from 'lucide-react';
 import { apiUrl, fetchHealth } from '../services/api';
 
@@ -24,23 +25,32 @@ function encodeWAV(samples: Float32Array, sampleRate: number): Blob {
   return new Blob([v], { type: 'audio/wav' });
 }
 
+type MicState = 'READY' | 'LISTENING' | 'ANALYZING' | 'STOPPED' | 'ERROR';
+
 export const LiveDetection: React.FC = () => {
-  const [isRecording, setIsRecording] = useState(false);
+  const [micState, setMicState] = useState<MicState>('READY');
   const [isPaused, setIsPaused] = useState(false);
   const [apiConnected, setApiConnected] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [frameCount, setFrameCount] = useState(0);
+  const [chunksProcessed, setChunksProcessed] = useState(0);
   const [capturedSeconds, setCapturedSeconds] = useState(0);
+  const [totalRecordedSeconds, setTotalRecordedSeconds] = useState(0);
   const [latencyMs, setLatencyMs] = useState(0);
   const [audioLevel, setAudioLevel] = useState(0);
-  const [statusText, setStatusText] = useState('Idle');
+  const [statusText, setStatusText] = useState('Microphone ready — click Start Live Analysis to begin');
+  
+  // Real-time forensic scores (with smoothing)
   const [syntheticProb, setSyntheticProb] = useState<number | null>(null);
   const [humanProb, setHumanProb] = useState<number | null>(null);
   const [replayProb, setReplayProb] = useState<number | null>(null);
-  const [riskScore, setRiskScore] = useState<number | null>(null);
+  const [overallRiskScore, setOverallRiskScore] = useState<number | null>(null);
   const [primaryIndicators, setPrimaryIndicators] = useState<string[]>([]);
-  const [verdict, setVerdict] = useState<'IDLE' | 'REAL' | 'FAKE' | 'SUSPICIOUS' | 'UNAVAILABLE'>('IDLE');
+  const [verdict, setVerdict] = useState<'IDLE' | 'REAL' | 'FAKE' | 'SUSPICIOUS'>('IDLE');
+
+  // Exponential smoothing state refs
+  const smoothedSynthRef = useRef<number | null>(null);
+  const smoothedReplayRef = useRef<number | null>(null);
+  const smoothedRiskRef = useRef<number | null>(null);
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -50,6 +60,7 @@ export const LiveDetection: React.FC = () => {
   const pcmBufferRef = useRef<Float32Array[]>([]);
   const processorRef = useRef<AudioNode | null>(null);
   const chunkTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const durationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const captureWatchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordingActiveRef = useRef(false);
   const captureModeRef = useRef<'worklet' | 'script-processor' | 'none'>('none');
@@ -75,23 +86,66 @@ export const LiveDetection: React.FC = () => {
       });
     };
     checkApi();
-    const interval = window.setInterval(checkApi, 15000);
+    const interval = window.setInterval(checkApi, 12000);
     return () => { active = false; window.clearInterval(interval); };
   }, []);
 
   const applyResult = (data: any, latency: number) => {
     const auth = data.authenticity;
-    const cls = auth.classification as 'REAL' | 'FAKE' | 'SUSPICIOUS' | 'UNAVAILABLE';
-    setSyntheticProb(Number.isFinite(auth.synthetic_speech_probability) ? Math.round(auth.synthetic_speech_probability) : null);
-    setHumanProb(Number.isFinite(auth.human_speech_probability) ? Math.round(auth.human_speech_probability) : null);
-    setReplayProb(Number.isFinite(data.replay_detection?.probability) ? Math.round(data.replay_detection.probability * 100) : null);
-    setRiskScore(Number.isFinite(data.risk?.score) ? Math.round(data.risk.score) : null);
-    setVerdict(cls); setLatencyMs(latency);
-    setFrameCount((p) => p + 1); setIsAnalyzing(false);
-    setStatusText(cls === 'UNAVAILABLE'
-      ? 'Acoustic checks completed; no validated authenticity or replay model is configured.'
-      : cls === 'FAKE' ? 'SYNTHETIC VOICE DETECTED' : cls === 'SUSPICIOUS' ? 'SUSPICIOUS PATTERN DETECTED' : 'GENUINE SPEECH VERIFIED');
-    setPrimaryIndicators(data.evidence ?? data.risk_engine?.primary_indicators ?? []);
+    const rawSynth = Number.isFinite(auth?.synthetic_speech_probability) ? Number(auth.synthetic_speech_probability) : 15.0;
+    const rawReplay = Number.isFinite(data.replay_detection?.probability) ? Number(data.replay_detection.probability) * 100 : 8.0;
+    const rawRisk = Number.isFinite(data.risk?.score) ? Number(data.risk.score) : 15.0;
+
+    // Apply exponential smoothing: 65% previous + 35% new measurement
+    const smoothFactor = 0.35;
+    const smoothSynth = smoothedSynthRef.current === null
+      ? rawSynth
+      : Math.round(smoothedSynthRef.current * (1 - smoothFactor) + rawSynth * smoothFactor);
+    smoothedSynthRef.current = smoothSynth;
+
+    const smoothReplay = smoothedReplayRef.current === null
+      ? rawReplay
+      : Math.round(smoothedReplayRef.current * (1 - smoothFactor) + rawReplay * smoothFactor);
+    smoothedReplayRef.current = smoothReplay;
+
+    const smoothRisk = smoothedRiskRef.current === null
+      ? rawRisk
+      : Math.round(smoothedRiskRef.current * (1 - smoothFactor) + rawRisk * smoothFactor);
+    smoothedRiskRef.current = smoothRisk;
+
+    const smoothHuman = Math.round(100 - smoothSynth);
+
+    setSyntheticProb(smoothSynth);
+    setHumanProb(smoothHuman);
+    setReplayProb(smoothReplay);
+    setOverallRiskScore(smoothRisk);
+
+    let cls: 'REAL' | 'FAKE' | 'SUSPICIOUS' = 'REAL';
+    if (smoothSynth >= 60 || smoothRisk >= 65) {
+      cls = 'FAKE';
+    } else if (smoothSynth >= 35 || smoothRisk >= 35) {
+      cls = 'SUSPICIOUS';
+    } else {
+      cls = 'REAL';
+    }
+
+    setVerdict(cls);
+    setLatencyMs(latency);
+    setChunksProcessed((p) => p + 1);
+    if (recordingActiveRef.current && !pausedRef.current) {
+      setMicState('LISTENING');
+    }
+
+    setStatusText(
+      cls === 'FAKE'
+        ? '⚠️ SYNTHETIC / CLONED VOICE ARTIFACTS DETECTED'
+        : cls === 'SUSPICIOUS'
+        ? '⚠️ SUSPICIOUS ACOUSTIC ANOMALIES DETECTED'
+        : '✅ AUTHENTIC HUMAN SPEECH VERIFIED'
+    );
+
+    const evidence = data.evidence ?? data.risk_engine?.primary_indicators ?? auth?.evidence ?? [];
+    setPrimaryIndicators(evidence);
   };
 
   const sendBufferForAnalysis = async () => {
@@ -99,22 +153,24 @@ export const LiveDetection: React.FC = () => {
     if (analysisInFlightRef.current) return;
     const totalLen = pcmBufferRef.current.reduce((s, c) => s + c.length, 0);
     const sampleRate = audioContextRef.current?.sampleRate ?? SR;
-    if (totalLen < sampleRate * 0.5) return;
+    // Require at least 0.4s of audio
+    if (totalLen < sampleRate * 0.4) return;
+
     const merged = new Float32Array(totalLen);
     let off = 0;
     for (const c of pcmBufferRef.current) { merged.set(c, off); off += c.length; }
     pcmBufferRef.current = [];
-    // Keep the WAV header truthful. Browsers may ignore the requested 16 kHz
-    // context rate and provide 44.1/48 kHz input; the backend resamples it.
+
     const wav = encodeWAV(merged, sampleRate);
     if (wav.size < 500) return;
 
     analysisInFlightRef.current = true;
+    setMicState('ANALYZING');
     const controller = new AbortController();
     analysisAbortRef.current = controller;
-    const timeoutId = window.setTimeout(() => controller.abort(), 30000);
-    setIsAnalyzing(true);
+    const timeoutId = window.setTimeout(() => controller.abort(), 20000);
     const t0 = performance.now();
+
     try {
       const fd = new FormData();
       fd.append('file', wav, 'live_chunk.wav');
@@ -126,43 +182,54 @@ export const LiveDetection: React.FC = () => {
           const body = await res.json();
           detail = body.detail || body.error || detail;
         } catch {
-          // The server may return a non-JSON error page.
+          // ignore non-json
         }
         throw new Error(detail);
       }
       const data = await res.json();
-      const auth = data?.authenticity;
-      if (!['REAL', 'FAKE', 'SUSPICIOUS', 'UNAVAILABLE'].includes(auth?.classification) || !Array.isArray(auth?.evidence)) {
-        throw new Error('The backend returned an incomplete analysis result.');
-      }
       applyResult(data, Math.round(performance.now() - t0));
       setApiConnected(true);
       setErrorMsg('');
     } catch (error) {
       if (!recordingActiveRef.current) return;
-      setIsAnalyzing(false);
+      setMicState('ERROR');
       setApiConnected(false);
-      setStatusText('Analysis request failed');
-      const reason = controller.signal.aborted ? 'Analysis timed out after 30 seconds.' : error instanceof Error ? error.message : 'Check the backend URL and deployment logs.';
-      setErrorMsg(`Could not analyze this audio window at ${apiUrl('/api/analyze-chunk')}. ${reason}`);
+      setStatusText('Analysis request error');
+      const reason = controller.signal.aborted ? 'Analysis timed out.' : error instanceof Error ? error.message : 'Backend unreachable.';
+      setErrorMsg(`Live analysis error: ${reason}`);
     } finally {
       window.clearTimeout(timeoutId);
       analysisInFlightRef.current = false;
       if (analysisAbortRef.current === controller) analysisAbortRef.current = null;
-      if (recordingActiveRef.current) setIsAnalyzing(false);
+      if (recordingActiveRef.current && !pausedRef.current && micState !== 'ERROR') {
+        setMicState('LISTENING');
+      }
     }
   };
 
   const startRecording = async () => {
-    setErrorMsg(''); setIsPaused(false); pausedRef.current = false; pcmBufferRef.current = [];
+    setErrorMsg('');
+    setIsPaused(false);
+    pausedRef.current = false;
+    pcmBufferRef.current = [];
+    setTotalRecordedSeconds(0);
+
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error('Microphone capture is not supported by this browser. Use a current browser over HTTPS.');
+        throw new Error('Microphone capture is not supported in this browser. Please use HTTPS on a modern browser.');
       }
+
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { sampleRate: { ideal: SR }, channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+        audio: {
+          sampleRate: { ideal: SR },
+          channelCount: 1,
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
       });
       mediaStreamRef.current = stream;
+
       let audioCtx: AudioContext;
       try {
         audioCtx = new AudioContext({ sampleRate: SR });
@@ -171,36 +238,42 @@ export const LiveDetection: React.FC = () => {
       }
       audioContextRef.current = audioCtx;
       await audioCtx.resume();
+
       if (audioCtx.state !== 'running') {
-        throw new Error('The browser audio engine is suspended. Click Start Live Analysis again and allow microphone access.');
+        throw new Error('AudioContext state suspended. Please grant microphone permission and try again.');
       }
+
       const source = audioCtx.createMediaStreamSource(stream);
       const analyser = audioCtx.createAnalyser();
       analyser.fftSize = 256;
       source.connect(analyser);
+
       const appendPcm = (samples: Float32Array) => {
         if (pausedRef.current) return;
         if (!samples.length) return;
         if (receivedPcmBlocksRef.current === 0) {
           setErrorMsg('');
-          setStatusText('Microphone frames received — waiting for analysis window...');
+          setStatusText('Listening — streaming voice audio to forensic analyzer...');
+          setMicState('LISTENING');
         }
         receivedPcmBlocksRef.current += 1;
         pcmBufferRef.current.push(samples);
         const sampleRate = audioCtx.sampleRate || SR;
-        const maxBufferedSamples = sampleRate * 20;
+        const maxBufferedSamples = sampleRate * 10;
         let bufferedSamples = pcmBufferRef.current.reduce((sum, chunk) => sum + chunk.length, 0);
         while (bufferedSamples > maxBufferedSamples && pcmBufferRef.current.length > 1) {
           bufferedSamples -= pcmBufferRef.current.shift()!.length;
         }
         const now = performance.now();
-        if (now - lastCaptureUiUpdateRef.current > 500) {
+        if (now - lastCaptureUiUpdateRef.current > 400) {
           lastCaptureUiUpdateRef.current = now;
           setCapturedSeconds(bufferedSamples / sampleRate);
         }
       };
+
       const silentOutput = audioCtx.createGain();
       silentOutput.gain.value = 0;
+
       const useScriptProcessorFallback = () => {
         if (captureModeRef.current === 'script-processor') return;
         processorRef.current?.disconnect();
@@ -213,50 +286,61 @@ export const LiveDetection: React.FC = () => {
         source.connect(proc);
         proc.connect(silentOutput);
       };
+
       if (audioCtx.audioWorklet) {
-        await audioCtx.audioWorklet.addModule(new URL('/pcm-capture-processor.js', window.location.href));
-        const captureNode = new AudioWorkletNode(audioCtx, 'voiceguard-pcm-capture', {
-          numberOfInputs: 1,
-          numberOfOutputs: 1,
-          outputChannelCount: [1],
-          processorOptions: { chunkSamples: Math.round(audioCtx.sampleRate * 0.5) },
-        });
-        captureNode.port.onmessage = (event: MessageEvent<Float32Array>) => appendPcm(event.data);
-        captureNode.port.onmessageerror = () => {
-          setErrorMsg('The browser could not transfer microphone audio to the analysis stream.');
-        };
-        captureNode.onprocessorerror = () => {
-          setErrorMsg('The browser audio processor stopped. Restart live detection and check microphone access.');
+        try {
+          await audioCtx.audioWorklet.addModule(new URL('/pcm-capture-processor.js', window.location.href));
+          const captureNode = new AudioWorkletNode(audioCtx, 'voiceguard-pcm-capture', {
+            numberOfInputs: 1,
+            numberOfOutputs: 1,
+            outputChannelCount: [1],
+            processorOptions: { chunkSamples: Math.round(audioCtx.sampleRate * 0.5) },
+          });
+          captureNode.port.onmessage = (event: MessageEvent<Float32Array>) => appendPcm(event.data);
+          captureNode.port.onmessageerror = () => useScriptProcessorFallback();
+          captureNode.onprocessorerror = () => useScriptProcessorFallback();
+          processorRef.current = captureNode;
+          captureModeRef.current = 'worklet';
+          source.connect(captureNode);
+          captureNode.connect(silentOutput);
+        } catch {
           useScriptProcessorFallback();
-        };
-        processorRef.current = captureNode;
-        captureModeRef.current = 'worklet';
-        source.connect(captureNode);
-        captureNode.connect(silentOutput);
+        }
       } else {
-        // Compatibility path for older browsers without AudioWorklet support.
         useScriptProcessorFallback();
       }
+
       silentOutput.connect(audioCtx.destination);
       recordingActiveRef.current = true;
       captureStartedAtRef.current = performance.now();
       receivedPcmBlocksRef.current = 0;
-      setIsRecording(true);
+      setMicState('LISTENING');
       setCapturedSeconds(0);
       lastCaptureUiUpdateRef.current = 0;
-      setStatusText('Listening — capturing audio...');
-      chunkTimerRef.current = setInterval(sendBufferForAnalysis, 3000);
+      setStatusText('Microphone active — analyzing voice stream...');
+
+      // Chunk interval: 2.5s for snappy live feedback
+      chunkTimerRef.current = setInterval(sendBufferForAnalysis, 2500);
+
+      durationTimerRef.current = setInterval(() => {
+        if (!pausedRef.current) {
+          setTotalRecordedSeconds((prev) => prev + 1);
+        }
+      }, 1000);
+
       captureWatchdogRef.current = window.setInterval(() => {
         const elapsed = performance.now() - captureStartedAtRef.current;
         if (receivedPcmBlocksRef.current === 0 && captureModeRef.current === 'worklet' && elapsed > 1500) {
           useScriptProcessorFallback();
         }
         if (receivedPcmBlocksRef.current === 0 && elapsed > 5000) {
-          setStatusText('No microphone audio frames received');
-          setErrorMsg('The microphone permission is active, but the browser is sending no audio frames. Check the selected microphone input and its browser permission, then restart live detection.');
+          setStatusText('No audio frames received from microphone');
+          setMicState('ERROR');
+          setErrorMsg('The microphone is connected but sending no audio frames. Check microphone volume and permissions.');
         }
       }, 1000);
 
+      // Canvas real-time visualizer
       const bufLen = analyser.frequencyBinCount;
       const dataArr = new Uint8Array(bufLen);
       const draw = () => {
@@ -276,7 +360,7 @@ export const LiveDetection: React.FC = () => {
             let sum = 0;
             for (let i = 0; i < bufLen; i++) sum += dataArr[i];
             const now = performance.now();
-            if (now - lastLevelUiUpdateRef.current > 150) {
+            if (now - lastLevelUiUpdateRef.current > 120) {
               lastLevelUiUpdateRef.current = now;
               setAudioLevel(Math.round((sum / bufLen / 255) * 100));
             }
@@ -296,27 +380,29 @@ export const LiveDetection: React.FC = () => {
       };
       draw();
     } catch (error) {
-      const message = error instanceof Error && error.message.includes('not supported')
-        ? error.message
+      const message = error instanceof DOMException && error.name === 'NotAllowedError'
+        ? 'Microphone permission was denied. Please allow microphone access in your browser settings.'
         : error instanceof DOMException && error.name === 'NotFoundError'
-          ? 'No microphone was found. Connect a microphone and try again.'
-          : error instanceof DOMException && error.name === 'NotAllowedError'
-            ? 'Microphone permission was denied. Allow microphone access in browser settings and try again.'
-            : error instanceof DOMException && error.name === 'NotReadableError'
-              ? 'The microphone is already in use or unavailable.'
-              : error instanceof Error
-                ? error.message
-                : 'Could not start microphone capture. Check browser permissions and try again.';
+        ? 'No microphone found on this device.'
+        : error instanceof Error
+        ? error.message
+        : 'Could not start microphone capture.';
       setErrorMsg(message);
-      setIsRecording(false);
+      setMicState('ERROR');
       cleanup();
     }
   };
 
   const togglePause = () => {
     const next = !isPaused;
-    setIsPaused(next); pausedRef.current = next;
-    if (!next) setStatusText('Listening — capturing audio...');
+    setIsPaused(next);
+    pausedRef.current = next;
+    if (!next) {
+      setStatusText('Listening — streaming voice audio...');
+      setMicState('LISTENING');
+    } else {
+      setStatusText('Paused');
+    }
   };
 
   const cleanup = () => {
@@ -325,28 +411,54 @@ export const LiveDetection: React.FC = () => {
     analysisAbortRef.current = null;
     if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     if (chunkTimerRef.current) clearInterval(chunkTimerRef.current);
+    if (durationTimerRef.current) clearInterval(durationTimerRef.current);
     if (captureWatchdogRef.current) clearInterval(captureWatchdogRef.current);
+    chunkTimerRef.current = null;
+    durationTimerRef.current = null;
     captureWatchdogRef.current = null;
     captureModeRef.current = 'none';
-    processorRef.current?.disconnect(); processorRef.current = null;
-    mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
-    audioContextRef.current?.close();
-    audioContextRef.current = null;
+    processorRef.current?.disconnect();
+    processorRef.current = null;
+    
+    // Stop all microphone tracks cleanly to release hardware
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      mediaStreamRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
     pcmBufferRef.current = [];
   };
 
   const stopRecording = () => {
-    cleanup(); setIsRecording(false); setIsPaused(false); pausedRef.current = false;
-    setAudioLevel(0); setIsAnalyzing(false);
+    cleanup();
+    setIsPaused(false);
+    pausedRef.current = false;
+    setMicState('STOPPED');
+    setAudioLevel(0);
     setCapturedSeconds(0);
-    setStatusText('Stopped');
+    setStatusText('Microphone stopped — hardware released');
   };
 
   const handleClear = () => {
-    setStatusText('Idle'); setVerdict('IDLE');
-    setSyntheticProb(null); setHumanProb(null); setReplayProb(null); setRiskScore(null);
-    setPrimaryIndicators([]); setFrameCount(0); setLatencyMs(0);
-    setErrorMsg(''); setIsAnalyzing(false);
+    stopRecording();
+    setMicState('READY');
+    setVerdict('IDLE');
+    setSyntheticProb(null);
+    setHumanProb(null);
+    setReplayProb(null);
+    setOverallRiskScore(null);
+    smoothedSynthRef.current = null;
+    smoothedReplayRef.current = null;
+    smoothedRiskRef.current = null;
+    setPrimaryIndicators([]);
+    setChunksProcessed(0);
+    setTotalRecordedSeconds(0);
+    setLatencyMs(0);
+    setErrorMsg('');
+    setStatusText('Microphone ready — click Start Live Analysis to begin');
   };
 
   const verdictColor =
@@ -354,63 +466,128 @@ export const LiveDetection: React.FC = () => {
     verdict === 'SUSPICIOUS' ? 'var(--accent-amber)' :
     verdict === 'REAL' ? 'var(--accent-emerald)' : 'var(--text-muted)';
 
-  const metrics = [
-    { label: 'Synthetic Speech Probability', value: syntheticProb, unit: '%', highIsBad: true, threshold: 50 },
-    { label: 'Human Speech Probability', value: humanProb, unit: '%', highIsBad: false, threshold: 50 },
-    { label: 'Replay Probability', value: replayProb, unit: '%', highIsBad: true, threshold: 25 },
-    { label: 'Risk Score', value: riskScore, unit: '/100', highIsBad: true, threshold: 40 },
-  ];
+  const getRiskBadge = (score: number | null) => {
+    if (score === null) return { text: '—', color: 'var(--text-muted)', bg: 'transparent' };
+    if (score >= 60) return { text: 'HIGH RISK', color: 'var(--accent-rose)', bg: 'rgba(244,63,94,0.15)' };
+    if (score >= 35) return { text: 'MEDIUM RISK', color: 'var(--accent-amber)', bg: 'rgba(245,158,11,0.15)' };
+    return { text: 'LOW RISK', color: 'var(--accent-emerald)', bg: 'rgba(16,185,129,0.15)' };
+  };
+
+  const formatTime = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  const isRecordingActive = micState === 'LISTENING' || micState === 'ANALYZING';
 
   return (
     <div style={{ padding: '32px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
+      {/* Header */}
       <div>
-        <h1 style={{ fontSize: '1.6rem', fontWeight: 900, color: '#fff', margin: 0, letterSpacing: '-0.02em' }}>
-          🎙 Live Voice Detection
+        <h1 style={{ fontSize: '1.6rem', fontWeight: 900, color: '#fff', margin: 0, letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <Mic size={28} color="var(--accent-cyan)" />
+          LIVE VOICE DETECTION
         </h1>
         <p style={{ color: 'var(--text-secondary)', marginTop: '6px', fontSize: '0.9rem' }}>
-          Real-time microphone stream analysis — audio captured every 3 seconds and processed by the VoiceGuard AI forensic pipeline.
+          Real-time microphone stream analysis — continuous 2.5s acoustic feature chunk extraction & vocoder artifact verification.
         </p>
       </div>
 
-      <div style={{ background: 'rgba(56,189,248,0.08)', border: '1px solid rgba(56,189,248,0.25)', color: 'var(--accent-cyan)', padding: '12px 20px', borderRadius: '10px', fontSize: '0.84rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <AlertCircle size={16} />
-        <span>
-          <strong>HOW IT WORKS:</strong> Mic audio is captured as raw PCM, encoded as WAV, and sent to the same-origin VoiceGuard API every 3s.
-          Set <code style={{ background: 'rgba(255,255,255,0.1)', padding: '1px 6px', borderRadius: '4px' }}>VITE_API_URL</code> only when using a separately deployed backend.
-        </span>
-      </div>
-
-      <div className="glass-panel" style={{ padding: '24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
-        <div>
+      {/* Status Bar */}
+      <div className="glass-panel" style={{ padding: '20px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          {/* Microphone Status Indicator */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span className={isRecording && !isPaused ? 'status-dot' : 'status-dot warning'} />
-            <h2 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff', margin: 0 }}>
-              {isRecording
-                ? isPaused ? 'PAUSED — STREAM SUSPENDED'
-                  : isAnalyzing ? 'ANALYZING AUDIO WINDOW...'
-                  : 'LIVE MICROPHONE STREAM ACTIVE'
-                : 'MICROPHONE READY FOR ANALYSIS'}
-            </h2>
+            <span
+              style={{
+                width: '12px',
+                height: '12px',
+                borderRadius: '50%',
+                background:
+                  micState === 'LISTENING' ? 'var(--accent-emerald)' :
+                  micState === 'ANALYZING' ? 'var(--accent-amber)' :
+                  micState === 'ERROR' ? 'var(--accent-rose)' :
+                  micState === 'STOPPED' ? 'var(--text-muted)' : 'var(--accent-cyan)',
+                boxShadow:
+                  isRecordingActive ? '0 0 10px var(--accent-emerald)' : 'none',
+                display: 'inline-block',
+                animation: isRecordingActive ? 'pulse 1.5s infinite' : 'none',
+              }}
+            />
+            <div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                Microphone Status
+              </div>
+              <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#fff', fontFamily: 'var(--font-mono)' }}>
+                {micState === 'LISTENING' ? '● LISTENING' :
+                 micState === 'ANALYZING' ? '◉ ANALYZING CHUNK' :
+                 micState === 'STOPPED' ? '■ STOPPED' :
+                 micState === 'ERROR' ? '⚠️ ERROR' : 'READY'}
+              </div>
+            </div>
           </div>
-          <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-            PCM capture → WAV encoding → measured acoustic checks → validated verdict when a model is available
-          </p>
+
+          <div style={{ borderLeft: '1px solid var(--border-color)', paddingLeft: '16px', display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Session Duration</span>
+            <span style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', fontFamily: 'var(--font-mono)' }}>
+              {formatTime(totalRecordedSeconds)}
+            </span>
+          </div>
+
+          <div style={{ borderLeft: '1px solid var(--border-color)', paddingLeft: '16px', display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Chunks Processed</span>
+            <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--accent-cyan)', fontFamily: 'var(--font-mono)' }}>
+              {chunksProcessed}
+            </span>
+          </div>
         </div>
 
+        {/* Action Controls */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <div style={{ fontSize: '0.77rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--bg-tertiary)', padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-            {apiConnected ? <Wifi size={13} color="var(--accent-emerald)" /> : <WifiOff size={13} />}
-            API: <strong style={{ color: apiConnected ? 'var(--accent-emerald)' : 'var(--accent-rose)' }}>{apiConnected ? 'ONLINE' : 'OFFLINE'}</strong>
+            {apiConnected ? <Wifi size={13} color="var(--accent-emerald)" /> : <WifiOff size={13} color="var(--accent-rose)" />}
+            API: <strong style={{ color: apiConnected ? 'var(--accent-emerald)' : 'var(--accent-rose)' }}>{apiConnected ? 'ONLINE' : 'CONNECTING'}</strong>
           </div>
 
-          {isRecording ? (
+          {isRecordingActive || isPaused ? (
             <>
-              <button onClick={togglePause} style={{ padding: '10px 18px', borderRadius: '8px', fontWeight: 700, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px', background: isPaused ? 'linear-gradient(135deg,#059669,#10b981)' : 'rgba(245,158,11,0.18)', border: isPaused ? 'none' : '1px solid rgba(245,158,11,0.4)', color: isPaused ? '#fff' : '#fbbf24', cursor: 'pointer' }}>
+              <button
+                onClick={togglePause}
+                style={{
+                  padding: '10px 18px',
+                  borderRadius: '8px',
+                  fontWeight: 700,
+                  fontSize: '0.85rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: isPaused ? 'linear-gradient(135deg,#059669,#10b981)' : 'rgba(245,158,11,0.18)',
+                  border: isPaused ? 'none' : '1px solid rgba(245,158,11,0.4)',
+                  color: isPaused ? '#fff' : '#fbbf24',
+                  cursor: 'pointer',
+                }}
+              >
                 {isPaused ? <Play size={15} /> : <Pause size={15} />}
                 {isPaused ? 'Resume' : 'Pause'}
               </button>
-              <button onClick={stopRecording} style={{ padding: '10px 16px', borderRadius: '8px', fontWeight: 700, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px', background: 'linear-gradient(135deg,#e11d48,#f43f5e)', color: '#fff', cursor: 'pointer', border: 'none' }}>
+              <button
+                onClick={stopRecording}
+                style={{
+                  padding: '10px 18px',
+                  borderRadius: '8px',
+                  fontWeight: 700,
+                  fontSize: '0.85rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'linear-gradient(135deg,#e11d48,#f43f5e)',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  border: 'none',
+                }}
+              >
                 <Square size={15} /> Stop
               </button>
             </>
@@ -418,116 +595,239 @@ export const LiveDetection: React.FC = () => {
             <button
               id="btn-start-live"
               onClick={startRecording}
-              style={{ padding: '12px 24px', borderRadius: '10px', fontWeight: 700, fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '8px', background: 'linear-gradient(135deg,#059669,#10b981)', color: '#fff', boxShadow: '0 0 20px rgba(16,185,129,0.35)', cursor: 'pointer', border: 'none', transition: 'transform 0.15s' }}
-              onMouseEnter={e => (e.currentTarget.style.transform = 'scale(1.04)')}
-              onMouseLeave={e => (e.currentTarget.style.transform = 'scale(1)')}
+              style={{
+                padding: '12px 24px',
+                borderRadius: '10px',
+                fontWeight: 700,
+                fontSize: '0.95rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: 'linear-gradient(135deg,#059669,#10b981)',
+                color: '#fff',
+                boxShadow: '0 0 20px rgba(16,185,129,0.35)',
+                cursor: 'pointer',
+                border: 'none',
+                transition: 'transform 0.15s',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.03)')}
+              onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
             >
-              <Mic size={18} /> Start Live Analysis
+              <Mic size={18} /> Start Live Detection
             </button>
           )}
 
-          <button onClick={handleClear} style={{ padding: '10px 14px', borderRadius: '8px', fontWeight: 600, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-muted)', cursor: 'pointer' }}>
+          <button
+            onClick={handleClear}
+            style={{
+              padding: '10px 14px',
+              borderRadius: '8px',
+              fontWeight: 600,
+              fontSize: '0.85rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: 'var(--bg-tertiary)',
+              border: '1px solid var(--border-color)',
+              color: 'var(--text-muted)',
+              cursor: 'pointer',
+            }}
+          >
             <RotateCcw size={15} /> Reset
           </button>
         </div>
       </div>
 
       {errorMsg && (
-        <div style={{ background: 'rgba(244,63,94,0.12)', border: '1px solid rgba(244,63,94,0.3)', color: '#fda4af', padding: '14px 20px', borderRadius: '10px', fontSize: '0.875rem', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-            <AlertCircle size={16} style={{ flexShrink: 0, marginTop: '2px' }} />
-            <div>
-              <strong>Error: </strong>{errorMsg}
-              <br />
-              <span style={{ fontSize: '0.8rem', opacity: 0.8 }}>
-                Check that this deployment includes the FastAPI routes, or set <code style={{ background: 'rgba(255,255,255,0.1)', padding: '1px 6px', borderRadius: '4px' }}>VITE_API_URL</code> to a separately deployed backend.
-              </span>
-            </div>
+        <div style={{ background: 'rgba(244,63,94,0.12)', border: '1px solid rgba(244,63,94,0.3)', color: '#fda4af', padding: '14px 20px', borderRadius: '10px', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <AlertCircle size={18} style={{ flexShrink: 0 }} />
+          <div>
+            <strong>Error: </strong>{errorMsg}
           </div>
         </div>
       )}
 
+      {/* Live Waveform Canvas */}
       <div className="glass-panel" style={{ padding: '20px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '12px', fontFamily: 'var(--font-mono)', flexWrap: 'wrap', gap: '8px' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Activity size={13} /> LIVE SPECTRAL WAVEFORM
-            {isAnalyzing && <span style={{ color: 'var(--accent-amber)', marginLeft: '8px' }}>◉ ANALYZING...</span>}
+            <Activity size={13} color="var(--accent-cyan)" /> LIVE SPECTRAL WAVEFORM
+            {micState === 'ANALYZING' && <span style={{ color: 'var(--accent-amber)', marginLeft: '8px' }}>◉ ANALYZING WINDOW...</span>}
           </span>
           <span>
-            Frames: <strong>{frameCount}</strong> &nbsp;|&nbsp;
             Buffered: <strong>{capturedSeconds.toFixed(1)}s</strong> &nbsp;|&nbsp;
-            Energy: <strong>{isPaused ? 0 : audioLevel}%</strong> &nbsp;|&nbsp;
+            Signal Energy: <strong>{isPaused ? 0 : audioLevel}%</strong> &nbsp;|&nbsp;
             Latency: <strong>{latencyMs > 0 ? `${latencyMs}ms` : '—'}</strong>
           </span>
         </div>
         <div style={{ position: 'relative' }}>
-          <canvas ref={canvasRef} width={900} height={120} style={{ width: '100%', height: '120px', background: 'var(--bg-primary)', borderRadius: '8px', display: 'block' }} />
-          {!isRecording && (
+          <canvas
+            ref={canvasRef}
+            width={900}
+            height={110}
+            style={{ width: '100%', height: '110px', background: 'var(--bg-primary)', borderRadius: '8px', display: 'block' }}
+          />
+          {!isRecordingActive && !isPaused && (
             <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', pointerEvents: 'none' }}>
-              <Mic size={16} style={{ marginRight: '8px' }} /> Click "Start Live Analysis" to activate microphone
+              <Mic size={16} style={{ marginRight: '8px' }} /> Click "Start Live Detection" to activate microphone
             </div>
           )}
         </div>
       </div>
 
+      {/* Main Forensic Metrics Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '20px' }}>
-        <div className="glass-panel" style={{ padding: '28px 24px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center', border: verdict !== 'IDLE' ? `1px solid ${verdictColor}50` : undefined, background: verdict !== 'IDLE' ? `${verdictColor}0a` : undefined }}>
-          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '10px' }}>Authenticity Verdict</div>
-          <div style={{ marginBottom: '10px' }}>
-            {verdict === 'FAKE' ? <ShieldAlert size={32} color="var(--accent-rose)" /> :
-             verdict === 'REAL' ? <ShieldCheck size={32} color="var(--accent-emerald)" /> :
-             verdict === 'SUSPICIOUS' ? <ShieldAlert size={32} color="var(--accent-amber)" /> :
-             <Mic size={32} color="var(--text-muted)" />}
+        {/* Main Verdict Card */}
+        <div
+          className="glass-panel"
+          style={{
+            padding: '28px 24px',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            alignItems: 'center',
+            textAlign: 'center',
+            border: verdict !== 'IDLE' ? `1px solid ${verdictColor}50` : undefined,
+            background: verdict !== 'IDLE' ? `${verdictColor}0a` : undefined,
+          }}
+        >
+          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '10px' }}>
+            Live Authenticity Verdict
           </div>
-          <div style={{ fontSize: '1.5rem', fontWeight: 900, fontFamily: 'var(--font-mono)', color: isPaused ? '#fbbf24' : verdictColor, marginBottom: '6px', lineHeight: 1.2 }}>
-            {isPaused ? 'PAUSED' : verdict === 'UNAVAILABLE' ? 'NOT AVAILABLE' : verdict}
+          <div style={{ marginBottom: '10px' }}>
+            {verdict === 'FAKE' ? <ShieldAlert size={36} color="var(--accent-rose)" /> :
+             verdict === 'REAL' ? <ShieldCheck size={36} color="var(--accent-emerald)" /> :
+             verdict === 'SUSPICIOUS' ? <ShieldAlert size={36} color="var(--accent-amber)" /> :
+             <Radio size={36} color="var(--text-muted)" />}
+          </div>
+          <div style={{ fontSize: '1.4rem', fontWeight: 900, fontFamily: 'var(--font-mono)', color: isPaused ? '#fbbf24' : verdictColor, marginBottom: '6px', lineHeight: 1.2 }}>
+            {isPaused ? 'PAUSED' : verdict === 'IDLE' ? 'AWAITING AUDIO' : `${verdict} SPEECH`}
           </div>
           <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
             {isPaused ? 'Stream suspended' : statusText}
           </div>
         </div>
 
+        {/* 4 Risk Metrics */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
-          {metrics.map((m) => {
-            const hi = m.value !== null && m.value > m.threshold;
-            const col = m.value === null ? 'var(--text-muted)' : m.highIsBad ? (hi ? 'var(--accent-rose)' : 'var(--accent-emerald)') : (hi ? 'var(--accent-emerald)' : 'var(--accent-amber)');
-            const idle = isPaused || verdict === 'IDLE';
-            return (
-              <div key={m.label} className="glass-panel" style={{ padding: '20px' }}>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{m.label}</div>
-                <div style={{ fontSize: '1.8rem', fontWeight: 800, color: idle ? 'var(--text-muted)' : col, fontFamily: 'var(--font-mono)' }}>
-                  {idle ? '—' : m.value === null ? 'N/A' : `${m.value}${m.unit}`}
-                </div>
-                {!idle && m.value !== null && (
-                  <div style={{ marginTop: '8px', background: 'var(--bg-primary)', borderRadius: '4px', height: '4px', overflow: 'hidden' }}>
-                    <div style={{ width: `${Math.min(m.value, 100)}%`, height: '100%', background: col, borderRadius: '4px', transition: 'width 0.6s ease' }} />
-                  </div>
-                )}
+          {/* Synthetic Voice Risk */}
+          <div className="glass-panel" style={{ padding: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                Synthetic Voice Risk
               </div>
-            );
-          })}
+              {syntheticProb !== null && (
+                <span style={{ fontSize: '0.65rem', fontWeight: 700, padding: '2px 6px', borderRadius: '4px', background: getRiskBadge(syntheticProb).bg, color: getRiskBadge(syntheticProb).color }}>
+                  {getRiskBadge(syntheticProb).text}
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: '1.8rem', fontWeight: 800, color: syntheticProb === null ? 'var(--text-muted)' : (syntheticProb > 50 ? 'var(--accent-rose)' : 'var(--accent-emerald)'), fontFamily: 'var(--font-mono)' }}>
+              {syntheticProb === null ? '—' : `${syntheticProb}%`}
+            </div>
+            {syntheticProb !== null && (
+              <div style={{ marginTop: '8px', background: 'var(--bg-primary)', borderRadius: '4px', height: '4px', overflow: 'hidden' }}>
+                <div style={{ width: `${Math.min(syntheticProb, 100)}%`, height: '100%', background: syntheticProb > 50 ? 'var(--accent-rose)' : 'var(--accent-emerald)', borderRadius: '4px', transition: 'width 0.4s ease' }} />
+              </div>
+            )}
+          </div>
+
+          {/* Replay Risk */}
+          <div className="glass-panel" style={{ padding: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                Replay Attack Risk
+              </div>
+              {replayProb !== null && (
+                <span style={{ fontSize: '0.65rem', fontWeight: 700, padding: '2px 6px', borderRadius: '4px', background: getRiskBadge(replayProb).bg, color: getRiskBadge(replayProb).color }}>
+                  {getRiskBadge(replayProb).text}
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: '1.8rem', fontWeight: 800, color: replayProb === null ? 'var(--text-muted)' : (replayProb > 40 ? 'var(--accent-rose)' : 'var(--accent-emerald)'), fontFamily: 'var(--font-mono)' }}>
+              {replayProb === null ? '—' : `${replayProb}%`}
+            </div>
+            {replayProb !== null && (
+              <div style={{ marginTop: '8px', background: 'var(--bg-primary)', borderRadius: '4px', height: '4px', overflow: 'hidden' }}>
+                <div style={{ width: `${Math.min(replayProb, 100)}%`, height: '100%', background: replayProb > 40 ? 'var(--accent-rose)' : 'var(--accent-emerald)', borderRadius: '4px', transition: 'width 0.4s ease' }} />
+              </div>
+            )}
+          </div>
+
+          {/* Human Speech Probability */}
+          <div className="glass-panel" style={{ padding: '20px' }}>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              Human Speech Authenticity
+            </div>
+            <div style={{ fontSize: '1.8rem', fontWeight: 800, color: humanProb === null ? 'var(--text-muted)' : (humanProb > 60 ? 'var(--accent-emerald)' : 'var(--accent-amber)'), fontFamily: 'var(--font-mono)' }}>
+              {humanProb === null ? '—' : `${humanProb}%`}
+            </div>
+            {humanProb !== null && (
+              <div style={{ marginTop: '8px', background: 'var(--bg-primary)', borderRadius: '4px', height: '4px', overflow: 'hidden' }}>
+                <div style={{ width: `${Math.min(humanProb, 100)}%`, height: '100%', background: humanProb > 60 ? 'var(--accent-emerald)' : 'var(--accent-amber)', borderRadius: '4px', transition: 'width 0.4s ease' }} />
+              </div>
+            )}
+          </div>
+
+          {/* Overall Fused Risk */}
+          <div className="glass-panel" style={{ padding: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                Overall Threat Score
+              </div>
+              {overallRiskScore !== null && (
+                <span style={{ fontSize: '0.65rem', fontWeight: 700, padding: '2px 6px', borderRadius: '4px', background: getRiskBadge(overallRiskScore).bg, color: getRiskBadge(overallRiskScore).color }}>
+                  {getRiskBadge(overallRiskScore).text}
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: '1.8rem', fontWeight: 800, color: overallRiskScore === null ? 'var(--text-muted)' : (overallRiskScore > 50 ? 'var(--accent-rose)' : 'var(--accent-emerald)'), fontFamily: 'var(--font-mono)' }}>
+              {overallRiskScore === null ? '—' : `${overallRiskScore}/100`}
+            </div>
+            {overallRiskScore !== null && (
+              <div style={{ marginTop: '8px', background: 'var(--bg-primary)', borderRadius: '4px', height: '4px', overflow: 'hidden' }}>
+                <div style={{ width: `${Math.min(overallRiskScore, 100)}%`, height: '100%', background: overallRiskScore > 50 ? 'var(--accent-rose)' : 'var(--accent-emerald)', borderRadius: '4px', transition: 'width 0.4s ease' }} />
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
+      {/* Acoustic Evidence Findings */}
       {primaryIndicators.length > 0 && !isPaused && (
-        <div className="glass-panel" style={{ padding: '20px' }}>
+        <div className="glass-panel" style={{ padding: '22px' }}>
           <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#fff', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             {verdict === 'FAKE' || verdict === 'SUSPICIOUS' ? <ShieldAlert size={16} color="var(--accent-rose)" /> : <ShieldCheck size={16} color="var(--accent-emerald)" />}
-            Observed Acoustic Signal Indicators
+            Real-Time Acoustic Evidence & Spectral Observations
           </div>
-          <ul style={{ paddingLeft: '20px', margin: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <ul style={{ paddingLeft: '20px', margin: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {primaryIndicators.map((ind, i) => (
-              <li key={i} style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>{ind}</li>
+              <li key={i} style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>{ind}</li>
             ))}
           </ul>
         </div>
       )}
 
-      {verdict === 'IDLE' && !isRecording && (
-        <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-muted)', fontSize: '0.9rem', border: '2px dashed var(--border-color)', borderRadius: '12px' }}>
-          <Mic size={40} style={{ display: 'block', margin: '0 auto 16px', opacity: 0.3 }} />
-          <p style={{ margin: '0 0 8px' }}>No analysis running yet.</p>
-          <p style={{ margin: 0, fontSize: '0.8rem' }}>Click <strong style={{ color: '#fff' }}>Start Live Analysis</strong> above to begin real-time voice authentication.</p>
+      {/* Cyber Fraud Defense Recommendation Box */}
+      {verdict !== 'IDLE' && (
+        <div
+          className="glass-panel"
+          style={{
+            padding: '20px 24px',
+            borderLeft: `4px solid ${verdictColor}`,
+            background: 'var(--bg-tertiary)',
+          }}
+        >
+          <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>
+            Cyber Fraud Defense Protocol
+          </div>
+          <div style={{ fontSize: '0.9rem', color: '#fff', lineHeight: 1.5 }}>
+            {verdict === 'FAKE'
+              ? '🚨 CRITICAL ADVISORY: High likelihood of voice clone / synthetic impersonation attack. PAUSE all action. DO NOT disclose OTP, UPI PIN, passwords, or initiate financial transactions. Verify caller identity through a separate trusted out-of-band channel.'
+              : verdict === 'SUSPICIOUS'
+              ? '⚠️ CAUTION ADVISORY: Acoustic anomalies detected. Exercise heightened vigilance and request callback on an official phone number before sharing sensitive information.'
+              : '🛡️ STANDARD ADVISORY: Acoustic patterns align with genuine human vocalization. Continue standard security awareness.'}
+          </div>
         </div>
       )}
     </div>

@@ -33,14 +33,14 @@ def test_health_endpoint():
     response = client.get("/api/health")
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "degraded"
+    assert data["status"] == "healthy"
     assert data["service"] == "voiceguard-ai"
     assert data["api_online"] is True
-    assert data["model_loaded"] is False
-    assert data["ai_engine_online"] is False
+    assert data["model_loaded"] is True
+    assert data["ai_engine_online"] is True
     assert "active_modules" in data
     assert data["active_modules"]["audio_preprocessor"] is True
-    assert data["active_modules"]["authenticity_detector"] is False
+    assert data["active_modules"]["authenticity_detector"] is True
 
 def test_analyze_valid_audio():
     wav_bytes = create_test_wav_bytes(duration_sec=1.2, freq_hz=440.0)
@@ -55,17 +55,14 @@ def test_analyze_valid_audio():
     assert "authenticity" in body
     assert "risk" in body
     assert "evidence" in body
-    assert body["authenticity"]["classification"] == "UNAVAILABLE"
-    assert body["authenticity"]["synthetic_speech_probability"] is None
-    assert body["authenticity"]["human_speech_probability"] is None
-    assert body["authenticity"]["model_confidence"] is None
-    assert body["risk"]["score"] is None
-    assert body["risk"]["level"] == "UNAVAILABLE"
-    assert body["detected_language"] is None
-    assert body["language_identification_available"] is False
-    assert "transcript" not in body
+    assert body["authenticity"]["classification"] in ["REAL", "SUSPICIOUS", "FAKE"]
+    assert isinstance(body["authenticity"]["synthetic_speech_probability"], (int, float))
+    assert isinstance(body["authenticity"]["human_speech_probability"], (int, float))
+    assert isinstance(body["risk"]["score"], (int, float))
+    assert body["risk"]["level"] in ["LOW", "MEDIUM", "HIGH"]
+    assert "recommendation" in body
 
-def test_analyze_chunk_uses_the_same_audio_analysis_pipeline():
+def test_analyze_chunk_uses_audio_analysis_pipeline():
     wav_bytes = create_test_wav_bytes(duration_sec=1.0, freq_hz=330.0)
     response = client.post(
         "/api/analyze-chunk",
@@ -76,10 +73,10 @@ def test_analyze_chunk_uses_the_same_audio_analysis_pipeline():
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "success"
-    assert body["authenticity"]["classification"] == "UNAVAILABLE"
+    assert body["authenticity"]["classification"] in ["REAL", "SUSPICIOUS", "FAKE"]
     assert body["authenticity"]["measurements"]["high_freq_ratio"] is not None
-    assert body["speaker_verification"]["similarity"] is None
-    assert body["speaker_verification"]["match"] is None
+    assert body["replay_detection"]["available"] is True
+    assert body["speaker_verification"]["available"] is False
 
 def test_analyze_corrupt_audio_returns_client_error():
     response = client.post("/api/analyze", files={"file": ("broken.wav", b"not a wav", "audio/wav")})
@@ -121,9 +118,9 @@ def test_speaker_verification_endpoint():
     assert body["status"] == "success"
     assert "similarity" in body
     assert "match" in body
-    assert body["available"] is False
-    assert body["match"] is None
-    assert body["similarity"] is None
+    assert body["available"] is True
+    assert isinstance(body["similarity"], (int, float))
+    assert isinstance(body["match"], bool)
 
 def test_replay_detection_endpoint():
     wav_bytes = create_test_wav_bytes(duration_sec=1.0, freq_hz=500.0)
@@ -133,24 +130,30 @@ def test_replay_detection_endpoint():
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "success"
-    assert body["probability"] is None
-    assert body["is_replay"] is None
+    assert body["available"] is True
+    assert isinstance(body["probability"], (int, float))
+    assert isinstance(body["is_replay"], bool)
 
 def test_call_shield_endpoints():
     # Incidents list
     inc_res = client.get("/api/v1/call-shield/incidents")
     assert inc_res.status_code == 200
     assert "incidents" in inc_res.json()
+    assert len(inc_res.json()["incidents"]) > 0
 
-    # Threat assessment
+    # Threat assessment with audio
+    wav_bytes = create_test_wav_bytes(duration_sec=1.0, freq_hz=440.0)
     threat_res = client.post(
         "/api/v1/call-shield/analyze-threat",
         data={"category": "Digital Arrest Authority Scam", "caller_phone": "+91 99999 88888", "language": "hi"},
+        files={"file": ("call_sample.wav", wav_bytes, "audio/wav")},
     )
     assert threat_res.status_code == 200
     body = threat_res.json()
     assert "threat_score" in body
+    assert body["threat_score"] is not None
     assert "recommendation" in body
+    assert len(body["evidence"]) > 0
 
 def test_analysis_history():
     res = client.get("/api/history")
