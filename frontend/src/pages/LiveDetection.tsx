@@ -50,7 +50,11 @@ export const LiveDetection: React.FC = () => {
   const pcmBufferRef = useRef<Float32Array[]>([]);
   const processorRef = useRef<AudioNode | null>(null);
   const chunkTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const captureWatchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordingActiveRef = useRef(false);
+  const captureModeRef = useRef<'worklet' | 'script-processor' | 'none'>('none');
+  const captureStartedAtRef = useRef(0);
+  const receivedPcmBlocksRef = useRef(0);
   const analysisInFlightRef = useRef(false);
   const analysisAbortRef = useRef<AbortController | null>(null);
   const lastCaptureUiUpdateRef = useRef(0);
@@ -176,6 +180,12 @@ export const LiveDetection: React.FC = () => {
       source.connect(analyser);
       const appendPcm = (samples: Float32Array) => {
         if (pausedRef.current) return;
+        if (!samples.length) return;
+        if (receivedPcmBlocksRef.current === 0) {
+          setErrorMsg('');
+          setStatusText('Microphone frames received — waiting for analysis window...');
+        }
+        receivedPcmBlocksRef.current += 1;
         pcmBufferRef.current.push(samples);
         const sampleRate = audioCtx.sampleRate || SR;
         const maxBufferedSamples = sampleRate * 20;
@@ -191,6 +201,18 @@ export const LiveDetection: React.FC = () => {
       };
       const silentOutput = audioCtx.createGain();
       silentOutput.gain.value = 0;
+      const useScriptProcessorFallback = () => {
+        if (captureModeRef.current === 'script-processor') return;
+        processorRef.current?.disconnect();
+        const proc = audioCtx.createScriptProcessor(4096, 1, 1);
+        proc.onaudioprocess = (event) => {
+          appendPcm(new Float32Array(event.inputBuffer.getChannelData(0)));
+        };
+        processorRef.current = proc;
+        captureModeRef.current = 'script-processor';
+        source.connect(proc);
+        proc.connect(silentOutput);
+      };
       if (audioCtx.audioWorklet) {
         await audioCtx.audioWorklet.addModule(new URL('/pcm-capture-processor.js', window.location.href));
         const captureNode = new AudioWorkletNode(audioCtx, 'voiceguard-pcm-capture', {
@@ -200,26 +222,40 @@ export const LiveDetection: React.FC = () => {
           processorOptions: { chunkSamples: Math.round(audioCtx.sampleRate * 0.5) },
         });
         captureNode.port.onmessage = (event: MessageEvent<Float32Array>) => appendPcm(event.data);
+        captureNode.port.onmessageerror = () => {
+          setErrorMsg('The browser could not transfer microphone audio to the analysis stream.');
+        };
+        captureNode.onprocessorerror = () => {
+          setErrorMsg('The browser audio processor stopped. Restart live detection and check microphone access.');
+          useScriptProcessorFallback();
+        };
         processorRef.current = captureNode;
+        captureModeRef.current = 'worklet';
         source.connect(captureNode);
         captureNode.connect(silentOutput);
       } else {
         // Compatibility path for older browsers without AudioWorklet support.
-        const proc = audioCtx.createScriptProcessor(4096, 1, 1);
-        proc.onaudioprocess = (event) => {
-          appendPcm(new Float32Array(event.inputBuffer.getChannelData(0)));
-        };
-        processorRef.current = proc;
-        source.connect(proc);
-        proc.connect(silentOutput);
+        useScriptProcessorFallback();
       }
       silentOutput.connect(audioCtx.destination);
       recordingActiveRef.current = true;
+      captureStartedAtRef.current = performance.now();
+      receivedPcmBlocksRef.current = 0;
       setIsRecording(true);
       setCapturedSeconds(0);
       lastCaptureUiUpdateRef.current = 0;
       setStatusText('Listening — capturing audio...');
       chunkTimerRef.current = setInterval(sendBufferForAnalysis, 3000);
+      captureWatchdogRef.current = window.setInterval(() => {
+        const elapsed = performance.now() - captureStartedAtRef.current;
+        if (receivedPcmBlocksRef.current === 0 && captureModeRef.current === 'worklet' && elapsed > 1500) {
+          useScriptProcessorFallback();
+        }
+        if (receivedPcmBlocksRef.current === 0 && elapsed > 5000) {
+          setStatusText('No microphone audio frames received');
+          setErrorMsg('The microphone permission is active, but the browser is sending no audio frames. Check the selected microphone input and its browser permission, then restart live detection.');
+        }
+      }, 1000);
 
       const bufLen = analyser.frequencyBinCount;
       const dataArr = new Uint8Array(bufLen);
@@ -289,6 +325,9 @@ export const LiveDetection: React.FC = () => {
     analysisAbortRef.current = null;
     if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
     if (chunkTimerRef.current) clearInterval(chunkTimerRef.current);
+    if (captureWatchdogRef.current) clearInterval(captureWatchdogRef.current);
+    captureWatchdogRef.current = null;
+    captureModeRef.current = 'none';
     processorRef.current?.disconnect(); processorRef.current = null;
     mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
     audioContextRef.current?.close();
