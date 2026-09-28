@@ -75,7 +75,7 @@ async def analyze_audio(
         replay_res = replay_det.analyze(features, waveform=waveform)
 
         # 5. Speaker Verification (if reference sample provided)
-        speaker_res = {"available": False, "similarity": 0.0, "match": False, "explanation": "No reference voice enrolled."}
+        speaker_res = {"available": False, "similarity": None, "match": None, "explanation": "No reference voice enrolled."}
         if reference_file is not None:
             try:
                 ref_bytes = await reference_file.read(MAX_FILE_SIZE_BYTES + 1)
@@ -83,12 +83,12 @@ async def analyze_audio(
                 ref_features = extractor.extract_features(ref_processed["waveform"])
                 speaker_res = verifier.verify(ref_features, features)
             except Exception as ref_err:
-                logger.warning(f"Reference voice processing failed: {ref_err}")
+                logger.warning("Reference voice processing failed: %s", ref_err)
                 speaker_res = {
                     "available": False,
-                    "similarity": 0.0,
-                    "match": False,
-                    "explanation": f"Reference processing error: {str(ref_err)}",
+                    "similarity": None,
+                    "match": None,
+                    "explanation": "Reference audio could not be processed; speaker verification is unavailable.",
                 }
 
         # 6. Risk Engine Fusion

@@ -78,6 +78,8 @@ def test_analyze_chunk_uses_the_same_audio_analysis_pipeline():
     assert body["status"] == "success"
     assert body["authenticity"]["classification"] == "UNAVAILABLE"
     assert body["authenticity"]["measurements"]["high_freq_ratio"] is not None
+    assert body["speaker_verification"]["similarity"] is None
+    assert body["speaker_verification"]["match"] is None
 
 def test_analyze_corrupt_audio_returns_client_error():
     response = client.post("/api/analyze", files={"file": ("broken.wav", b"not a wav", "audio/wav")})
