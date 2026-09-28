@@ -1,15 +1,15 @@
 import React from 'react';
 import {
-  ShieldAlert,
+  ShieldCheck,
   Mic,
   FileAudio,
-  Play,
   ArrowRight,
   Activity,
   Layers,
   Fingerprint,
   Radio,
   Sliders,
+  FlaskConical,
 } from 'lucide-react';
 import { HeroWaveform } from '../components/HeroWaveform';
 
@@ -17,23 +17,25 @@ interface LandingPageProps {
   onStartLive: () => void;
   onAnalyzeRecording: () => void;
   onViewDemo: () => void;
-  onExploreIntel: () => void;
+  onExploreDemoLab: () => void;
+  onHowItWorks: () => void;
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({
   onStartLive,
   onAnalyzeRecording,
   onViewDemo,
-  onExploreIntel,
+  onExploreDemoLab,
+  onHowItWorks,
 }) => {
   const pipelineSteps = [
     { label: 'VOICE INPUT', icon: Mic },
-    { label: 'AUDIO PREPROCESSING', icon: Sliders },
-    { label: 'VOICE AUTHENTICITY', icon: Layers },
-    { label: 'SPEAKER VERIFICATION', icon: Fingerprint },
+    { label: 'PREPROCESSING', icon: Sliders },
+    { label: 'SPECTRAL FEATURES', icon: Layers },
+    { label: 'SPEAKER BIOMETRICS', icon: Fingerprint },
     { label: 'REPLAY DETECTION', icon: Radio },
-    { label: 'RISK FUSION ENGINE', icon: Activity },
-    { label: 'SECURITY RESPONSE', icon: ShieldAlert },
+    { label: 'RISK FUSION', icon: Activity },
+    { label: 'DEFENSE VERDICT', icon: ShieldCheck },
   ];
 
   return (
@@ -67,7 +69,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               boxShadow: 'var(--shadow-cyan)',
             }}
           >
-            <ShieldAlert size={24} />
+            <ShieldCheck size={24} />
           </div>
           <span style={{ fontSize: '1.25rem', fontWeight: 800, letterSpacing: '0.04em' }}>
             VOICEGUARD <span style={{ color: 'var(--accent-cyan)' }}>AI</span>
@@ -76,24 +78,38 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <button
-            onClick={onViewDemo}
-            style={{ color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.9rem' }}
+            onClick={onHowItWorks}
+            style={{ color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.9rem', background: 'transparent', border: 'none', cursor: 'pointer' }}
           >
-            Dashboard Demo
+            How It Works
+          </button>
+          <button
+            onClick={onExploreDemoLab}
+            style={{ color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.9rem', background: 'transparent', border: 'none', cursor: 'pointer' }}
+          >
+            Demo Lab
+          </button>
+          <button
+            onClick={onViewDemo}
+            style={{ color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.9rem', background: 'transparent', border: 'none', cursor: 'pointer' }}
+          >
+            Dashboard
           </button>
           <button
             onClick={onStartLive}
             style={{
               background: 'linear-gradient(135deg, var(--accent-cyan), var(--accent-blue))',
               color: '#fff',
-              fontWeight: 600,
+              fontWeight: 700,
               fontSize: '0.9rem',
               padding: '10px 20px',
               borderRadius: '8px',
+              border: 'none',
+              cursor: 'pointer',
               boxShadow: '0 0 15px rgba(56, 189, 248, 0.3)',
             }}
           >
-            Launch SOC Platform
+            Launch Platform
           </button>
         </div>
       </nav>
@@ -115,7 +131,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             marginBottom: '24px',
           }}
         >
-          <ShieldAlert size={16} /> Enterprise Voice Cybersecurity SOC — SIH 2026 Edition
+          <ShieldCheck size={16} /> AI Voice Cybersecurity Platform — SIH 2026 Edition
         </div>
 
         <h1
@@ -140,7 +156,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               WebkitTextFillColor: 'transparent',
             }}
           >
-            Detect AI Impersonation Before It Becomes a Threat.
+            Detect AI Impersonation In Real Time.
           </span>
         </h1>
 
@@ -154,7 +170,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           }}
         >
           VoiceGuard AI evaluates acoustic artifacts, spectral vocoder footprints, replay signatures, and speaker
-          biometric embeddings to distinguish genuine human voices from AI-generated clones, voice conversion, and replay attacks in real time.
+          biometric embeddings to distinguish genuine human voices from AI-generated clones and replay attacks.
         </p>
 
         {/* Action Buttons */}
@@ -171,11 +187,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               fontWeight: 700,
               padding: '14px 28px',
               borderRadius: '10px',
+              border: 'none',
+              cursor: 'pointer',
               boxShadow: '0 0 20px rgba(16, 185, 129, 0.3)',
             }}
           >
-            <Mic size={20} /> Start Live Detection
+            <Mic size={20} /> Start Live Protection
           </button>
+
           <button
             onClick={onAnalyzeRecording}
             style={{
@@ -189,12 +208,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               fontWeight: 700,
               padding: '14px 28px',
               borderRadius: '10px',
+              cursor: 'pointer',
             }}
           >
             <FileAudio size={20} /> Analyze Recording
           </button>
+
           <button
-            onClick={onViewDemo}
+            onClick={onExploreDemoLab}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -206,12 +227,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               fontWeight: 600,
               padding: '14px 24px',
               borderRadius: '10px',
+              cursor: 'pointer',
             }}
           >
-            <Play size={18} /> View Demo
+            <FlaskConical size={18} color="var(--accent-violet)" /> Demo Lab
           </button>
+
           <button
-            onClick={onExploreIntel}
+            onClick={onHowItWorks}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -219,24 +242,19 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               color: 'var(--text-secondary)',
               fontSize: '0.95rem',
               padding: '14px 16px',
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
             }}
           >
-            Explore Threat Intelligence <ArrowRight size={16} />
+            How It Works <ArrowRight size={16} />
           </button>
         </div>
 
-        {/* Real-time Waveform Canvas */}
+        {/* Pipeline Steps Flow */}
         <div className="glass-panel" style={{ padding: '24px', marginBottom: '32px' }}>
-          <div
-            style={{
-              fontSize: '0.75rem',
-              color: 'var(--text-muted)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.08em',
-              marginBottom: '16px',
-            }}
-          >
-            Real-Time Analysis Pipeline Architecture
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '16px' }}>
+            Real-Time Voice Threat Analysis Pipeline
           </div>
           <div
             style={{

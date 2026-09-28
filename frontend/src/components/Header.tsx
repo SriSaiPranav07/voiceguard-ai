@@ -1,5 +1,5 @@
 import React from 'react';
-import { Mic, FileAudio, Shield } from 'lucide-react';
+import { Mic, FileAudio, ShieldCheck } from 'lucide-react';
 
 interface HeaderProps {
   currentView: string;
@@ -10,7 +10,7 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   currentView,
   onStartLive,
-  onAnalyzeRecording
+  onAnalyzeRecording,
 }) => {
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -20,44 +20,40 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   const titles: Record<string, string> = {
-    'overview': 'Security Monitoring Dashboard',
-    'live-detection': 'Real-Time Live Voice Detection',
-    'call-shield': 'Call Shield Threat Intelligence',
-    'audio-analysis': 'Deepfake & Synthetic Speech Analysis',
-    'attack-sim': 'SIH 2026 Attack Simulation & Threat Scenarios',
-    'speaker-verification': 'Speaker Verification & Biometrics',
-    'threat-intel': 'Global Voice Threat Feed',
-    'incidents': 'Incident Response & Case Management',
-    'analytics': 'Forensic Security Analytics',
-    'ai-models': 'AI Model Pipeline & Benchmarks',
-    'evidence-center': 'Encrypted Evidence Storage',
-    'settings': 'Platform & API Configurations'
+    'overview': 'Security Overview Dashboard',
+    'live-protection': 'Live Protection & Anti-Spoofing',
+    'analyze-recording': 'Analyze Recording — Forensic Speech Analysis',
+    'reports': 'Threat Intelligence & Forensic Reports',
+    'demo-lab': 'SIH 2026 Threat Simulation & Demo Lab',
+    'how-it-works': 'How VoiceGuard AI Works — Technical Architecture',
+    'settings': 'Platform Settings & Configurations',
   };
 
   return (
-    <header style={{
-      padding: '20px 32px',
-      background: 'var(--bg-secondary)',
-      borderBottom: '1px solid var(--border-color)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between'
-    }}>
+    <header
+      style={{
+        padding: '20px 32px',
+        background: 'var(--bg-secondary)',
+        borderBottom: '1px solid var(--border-color)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+      }}
+    >
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
           <span>{getGreeting()}</span>
           <span>•</span>
           <span style={{ color: 'var(--accent-emerald)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-            <Shield size={14} /> Voice security monitoring is active
+            <ShieldCheck size={14} /> Voice threat protection active
           </span>
         </div>
-        <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#fff', marginTop: '4px', letterSpacing: '-0.01em' }}>
+        <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#fff', marginTop: '4px', letterSpacing: '-0.01em', margin: 0 }}>
           {titles[currentView] || 'VoiceGuard AI'}
         </h1>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        {/* Header Action Buttons */}
         <button
           onClick={onStartLive}
           style={{
@@ -66,14 +62,16 @@ export const Header: React.FC<HeaderProps> = ({
             gap: '8px',
             background: 'linear-gradient(135deg, #059669, #10b981)',
             color: '#fff',
-            fontWeight: 600,
+            fontWeight: 700,
             fontSize: '0.85rem',
             padding: '8px 16px',
             borderRadius: '8px',
-            boxShadow: '0 0 12px rgba(16, 185, 129, 0.3)'
+            border: 'none',
+            cursor: 'pointer',
+            boxShadow: '0 0 12px rgba(16, 185, 129, 0.3)',
           }}
         >
-          <Mic size={16} /> Start Live Detection
+          <Mic size={16} /> Start Live Protection
         </button>
 
         <button
@@ -85,10 +83,11 @@ export const Header: React.FC<HeaderProps> = ({
             background: 'var(--bg-tertiary)',
             border: '1px solid var(--border-color-glow)',
             color: 'var(--accent-cyan)',
-            fontWeight: 600,
+            fontWeight: 700,
             fontSize: '0.85rem',
             padding: '8px 16px',
-            borderRadius: '8px'
+            borderRadius: '8px',
+            cursor: 'pointer',
           }}
         >
           <FileAudio size={16} /> Analyze Recording

@@ -1,15 +1,14 @@
 import React from 'react';
 import {
-  ShieldAlert,
   Activity,
-  Mic,
+  ShieldCheck,
   FileAudio,
   BarChart3,
-  Cpu,
+  FlaskConical,
+  HelpCircle,
   Settings,
   LogOut,
   User as UserIcon,
-  Radio
 } from 'lucide-react';
 import type { User as UserType } from '../services/api';
 
@@ -28,59 +27,64 @@ export const Sidebar: React.FC<SidebarProps> = ({
   user,
   apiOnline,
   modelLoaded,
-  onLogout
+  onLogout,
 }) => {
   const menuItems = [
     { id: 'overview', label: 'Overview', icon: Activity },
-    { id: 'live-detection', label: 'Live Detection', icon: Mic, badge: 'LIVE' },
-    { id: 'call-shield', label: 'Call Shield', icon: ShieldAlert, badge: 'NEW', highlight: true },
-    { id: 'audio-analysis', label: 'Audio Analysis', icon: FileAudio },
-    { id: 'attack-sim', label: 'Attack Simulation', icon: Radio, badge: 'SIH DEMO', highlight: true },
-    { id: 'analytics', label: 'Fraud Analytics & Incidents', icon: BarChart3 },
-    { id: 'ai-models', label: 'AI Models', icon: Cpu },
+    { id: 'live-protection', label: 'Live Protection', icon: ShieldCheck, badge: 'LIVE' },
+    { id: 'analyze-recording', label: 'Analyze Recording', icon: FileAudio },
+    { id: 'reports', label: 'Reports', icon: BarChart3 },
+    { id: 'demo-lab', label: 'Demo Lab', icon: FlaskConical, badge: 'SIH DEMO', highlight: true },
+    { id: 'how-it-works', label: 'How It Works', icon: HelpCircle },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
   return (
-    <aside style={{
-      width: '260px',
-      height: '100vh',
-      position: 'fixed',
-      left: 0,
-      top: 0,
-      backgroundColor: 'var(--bg-secondary)',
-      borderRight: '1px solid var(--border-color)',
-      display: 'flex',
-      flexDirection: 'column',
-      zIndex: 100
-    }}>
-      {/* Brand Logo */}
-      <div style={{
-        padding: '20px 24px',
-        borderBottom: '1px solid var(--border-color)',
+    <aside
+      style={{
+        width: '260px',
+        height: '100vh',
+        position: 'fixed',
+        left: 0,
+        top: 0,
+        backgroundColor: 'var(--bg-secondary)',
+        borderRight: '1px solid var(--border-color)',
         display: 'flex',
-        alignItems: 'center',
-        gap: '12px'
-      }}>
-        <div style={{
-          width: '36px',
-          height: '36px',
-          borderRadius: '8px',
-          background: 'linear-gradient(135deg, var(--accent-cyan), var(--accent-blue))',
+        flexDirection: 'column',
+        zIndex: 100,
+      }}
+    >
+      {/* Brand Header */}
+      <div
+        style={{
+          padding: '20px 24px',
+          borderBottom: '1px solid var(--border-color)',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
-          color: '#fff',
-          boxShadow: 'var(--shadow-cyan)'
-        }}>
-          <ShieldAlert size={22} />
+          gap: '12px',
+        }}
+      >
+        <div
+          style={{
+            width: '36px',
+            height: '36px',
+            borderRadius: '8px',
+            background: 'linear-gradient(135deg, var(--accent-cyan), var(--accent-blue))',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#fff',
+            boxShadow: 'var(--shadow-cyan)',
+          }}
+        >
+          <ShieldCheck size={22} />
         </div>
         <div>
-          <h1 style={{ fontSize: '1.15rem', fontWeight: 800, letterSpacing: '0.04em', color: '#fff' }}>
+          <h1 style={{ fontSize: '1.15rem', fontWeight: 800, letterSpacing: '0.04em', color: '#fff', margin: 0 }}>
             VOICEGUARD <span style={{ color: 'var(--accent-cyan)' }}>AI</span>
           </h1>
-          <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-            SOC Threat Platform
+          <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: 0 }}>
+            Voice Threat Defense
           </p>
         </div>
       </div>
@@ -99,15 +103,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                padding: '10px 14px',
+                padding: '11px 14px',
                 marginBottom: '4px',
                 borderRadius: '8px',
                 fontSize: '0.875rem',
-                fontWeight: isActive ? 600 : 400,
+                fontWeight: isActive ? 700 : 500,
                 color: isActive ? '#fff' : item.highlight ? 'var(--accent-cyan)' : 'var(--text-secondary)',
-                backgroundColor: isActive ? 'rgba(56, 189, 248, 0.12)' : 'transparent',
-                border: isActive ? '1px solid rgba(56, 189, 248, 0.3)' : '1px solid transparent',
-                transition: 'all 0.15s ease'
+                backgroundColor: isActive ? 'rgba(56, 189, 248, 0.14)' : 'transparent',
+                border: isActive ? '1px solid rgba(56, 189, 248, 0.35)' : '1px solid transparent',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -115,14 +120,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <span>{item.label}</span>
               </div>
               {item.badge && (
-                <span style={{
-                  fontSize: '0.6rem',
-                  fontWeight: 700,
-                  padding: '2px 6px',
-                  borderRadius: '4px',
-                  background: item.badge === 'LIVE' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(56, 189, 248, 0.2)',
-                  color: item.badge === 'LIVE' ? 'var(--accent-emerald)' : 'var(--accent-cyan)'
-                }}>
+                <span
+                  style={{
+                    fontSize: '0.6rem',
+                    fontWeight: 700,
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    background: item.badge === 'LIVE' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(56, 189, 248, 0.2)',
+                    color: item.badge === 'LIVE' ? 'var(--accent-emerald)' : 'var(--accent-cyan)',
+                  }}
+                >
                   {item.badge}
                 </span>
               )}
@@ -132,54 +139,59 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </nav>
 
       {/* System Status Footer */}
-      <div style={{
-        padding: '12px 16px',
-        backgroundColor: 'rgba(10, 13, 20, 0.6)',
-        borderTop: '1px solid var(--border-color)',
-        fontSize: '0.7rem',
-        color: 'var(--text-secondary)'
-      }}>
+      <div
+        style={{
+          padding: '12px 16px',
+          backgroundColor: 'rgba(10, 13, 20, 0.6)',
+          borderTop: '1px solid var(--border-color)',
+          fontSize: '0.7rem',
+          color: 'var(--text-secondary)',
+        }}
+      >
         <div style={{ fontWeight: 700, textTransform: 'uppercase', fontSize: '0.65rem', letterSpacing: '0.05em', marginBottom: '6px', color: 'var(--text-muted)' }}>
           System Status
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span className={`status-dot ${modelLoaded ? '' : 'warning'}`}></span> Authenticity model {modelLoaded ? 'Loaded' : 'Unavailable'}
+            <span className={`status-dot ${apiOnline ? (modelLoaded ? '' : 'warning') : 'danger'}`} />
+            Protection Pipeline {apiOnline ? (modelLoaded ? 'Active (Loaded)' : 'Active (Simulation)') : 'Offline'}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span className={`status-dot ${apiOnline ? '' : 'danger'}`}></span> API {apiOnline ? 'Connected' : 'Disconnected'}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span className={`status-dot ${apiOnline ? 'warning' : 'danger'}`}></span> Acoustic checks {apiOnline ? 'Available' : 'Unavailable'}
+            <span className={`status-dot ${apiOnline ? '' : 'danger'}`} />
+            API Gateway {apiOnline ? 'Connected' : 'Offline'}
           </div>
         </div>
       </div>
 
-      {/* User Profile */}
-      <div style={{
-        padding: '14px 16px',
-        borderTop: '1px solid var(--border-color)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        background: 'var(--bg-tertiary)'
-      }}>
+      {/* User Session Profile */}
+      <div
+        style={{
+          padding: '14px 16px',
+          borderTop: '1px solid var(--border-color)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: 'var(--bg-tertiary)',
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <div style={{
-            width: '32px',
-            height: '32px',
-            borderRadius: '50%',
-            background: 'var(--accent-blue)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#fff'
-          }}>
+          <div
+            style={{
+              width: '32px',
+              height: '32px',
+              borderRadius: '50%',
+              background: 'var(--accent-blue)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#fff',
+            }}
+          >
             <UserIcon size={16} />
           </div>
           <div>
             <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#fff' }}>
-              {user ? user.name : 'SOC Lead'}
+              {user ? user.name : 'Security Lead'}
             </div>
             <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
               {user ? user.role : 'Analyst'}
@@ -189,7 +201,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <button
           onClick={onLogout}
           title="Logout"
-          style={{ color: 'var(--text-muted)', padding: '6px', borderRadius: '4px' }}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: 'var(--text-muted)',
+            padding: '6px',
+            borderRadius: '4px',
+            cursor: 'pointer',
+          }}
         >
           <LogOut size={16} />
         </button>

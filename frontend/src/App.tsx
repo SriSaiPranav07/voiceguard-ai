@@ -4,27 +4,49 @@ import { Header } from './components/Header';
 import { LandingPage } from './pages/LandingPage';
 import { AuthPage } from './pages/AuthPage';
 import { Dashboard } from './pages/Dashboard';
-import { LiveDetection } from './pages/LiveDetection';
-import { CallShield } from './pages/CallShield';
-import { AudioAnalysis } from './pages/AudioAnalysis';
-import { Analytics } from './pages/Analytics';
-import { AIModels } from './pages/AIModels';
+import { LiveProtection } from './pages/LiveProtection';
+import { AnalyzeRecording } from './pages/AnalyzeRecording';
+import { Reports } from './pages/Reports';
+import { DemoLab } from './pages/DemoLab';
+import { HowItWorks } from './pages/HowItWorks';
 import { Settings } from './pages/Settings';
-import { AttackSimulation } from './pages/AttackSimulation';
 import { fetchHealth, type User } from './services/api';
+
+// Route alias / redirect resolver for backward compatibility
+function resolveRoute(route: string): string {
+  switch (route) {
+    case 'live-detection':
+    case 'call-shield':
+      return 'live-protection';
+    case 'audio-analysis':
+    case 'multilingual':
+      return 'analyze-recording';
+    case 'attack-sim':
+    case 'attack-simulation':
+      return 'demo-lab';
+    case 'analytics':
+    case 'incidents':
+      return 'reports';
+    case 'ai-models':
+    case 'architecture':
+      return 'how-it-works';
+    default:
+      return route;
+  }
+}
 
 export function App() {
   const [apiOnline, setApiOnline] = useState(false);
   const [modelLoaded, setModelLoaded] = useState(false);
-  const [currentView, setCurrentView] = useState<string>('live-detection');
-  const [pendingTargetView, setPendingTargetView] = useState<string>('live-detection');
-  
-  // Demo mode: auto-authenticated for direct access
+  const [currentView, setCurrentView] = useState<string>('overview');
+  const [pendingTargetView, setPendingTargetView] = useState<string>('overview');
+
+  // Demo user profile for immediate testing
   const [user, setUser] = useState<User | null>({
-    id: 'demo-user',
-    name: 'Demo User',
-    email: 'demo@voiceguard.ai',
-    role: 'analyst',
+    id: 'usr_lead_01',
+    name: 'Security Lead',
+    email: 'analyst@voiceguard.ai',
+    role: 'Security Analyst',
   });
 
   useEffect(() => {
@@ -39,22 +61,26 @@ export function App() {
     };
     checkApi();
     const interval = window.setInterval(checkApi, 15000);
-    return () => { active = false; window.clearInterval(interval); };
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
   }, []);
 
   const navigateProtected = (targetView: string) => {
-    if (!user) {
-      setPendingTargetView(targetView);
+    const resolved = resolveRoute(targetView);
+    if (!user && resolved !== 'landing' && resolved !== 'auth') {
+      setPendingTargetView(resolved);
       setCurrentView('auth');
     } else {
-      setCurrentView(targetView);
+      setCurrentView(resolved);
     }
   };
 
   const handleLoginSuccess = (userData: User, authToken: string) => {
     setUser(userData);
     if (authToken) console.log('Session token initialized');
-    setCurrentView(pendingTargetView || 'overview');
+    setCurrentView(pendingTargetView ? resolveRoute(pendingTargetView) : 'overview');
   };
 
   const handleLogout = () => {
@@ -66,24 +92,26 @@ export function App() {
   if (currentView === 'landing') {
     return (
       <LandingPage
-        onStartLive={() => navigateProtected('live-detection')}
-        onAnalyzeRecording={() => navigateProtected('audio-analysis')}
+        onStartLive={() => navigateProtected('live-protection')}
+        onAnalyzeRecording={() => navigateProtected('analyze-recording')}
         onViewDemo={() => navigateProtected('overview')}
-        onExploreIntel={() => navigateProtected('call-shield')}
+        onExploreDemoLab={() => navigateProtected('demo-lab')}
+        onHowItWorks={() => navigateProtected('how-it-works')}
       />
     );
   }
 
-  // Render Auth Page if requesting login or required for action
+  // Render Auth Page
   if (currentView === 'auth') {
     return <AuthPage onLoginSuccess={handleLoginSuccess} />;
   }
 
-  // Render Main SOC Platform Layout with Sidebar & Header
+  const activeView = resolveRoute(currentView);
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg-primary)' }}>
       <Sidebar
-        currentView={currentView}
+        currentView={activeView}
         setCurrentView={(view) => navigateProtected(view)}
         user={user}
         apiOnline={apiOnline}
@@ -93,34 +121,32 @@ export function App() {
 
       <main style={{ marginLeft: '260px', flex: 1, minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
         <Header
-          currentView={currentView}
-          onStartLive={() => navigateProtected('live-detection')}
-          onAnalyzeRecording={() => navigateProtected('audio-analysis')}
+          currentView={activeView}
+          onStartLive={() => navigateProtected('live-protection')}
+          onAnalyzeRecording={() => navigateProtected('analyze-recording')}
         />
 
         <div style={{ flex: 1 }}>
-          {currentView === 'overview' && (
+          {activeView === 'overview' && (
             <Dashboard
-              onStartLive={() => navigateProtected('live-detection')}
-              onAnalyzeRecording={() => navigateProtected('audio-analysis')}
-              onSelectCallShield={() => navigateProtected('call-shield')}
-              onSelectAttackSim={() => navigateProtected('attack-sim')}
+              onStartLive={() => navigateProtected('live-protection')}
+              onAnalyzeRecording={() => navigateProtected('analyze-recording')}
+              onSelectDemoLab={() => navigateProtected('demo-lab')}
+              onSelectReports={() => navigateProtected('reports')}
             />
           )}
 
-          {currentView === 'live-detection' && <LiveDetection />}
+          {activeView === 'live-protection' && <LiveProtection />}
 
-          {currentView === 'call-shield' && <CallShield />}
+          {activeView === 'analyze-recording' && <AnalyzeRecording />}
 
-          {currentView === 'audio-analysis' && <AudioAnalysis />}
+          {activeView === 'reports' && <Reports />}
 
-          {currentView === 'attack-sim' && <AttackSimulation />}
+          {activeView === 'demo-lab' && <DemoLab />}
 
-          {currentView === 'analytics' && <Analytics />}
+          {activeView === 'how-it-works' && <HowItWorks />}
 
-          {currentView === 'ai-models' && <AIModels />}
-
-          {currentView === 'settings' && (
+          {activeView === 'settings' && (
             <Settings
               user={user}
               onLogout={handleLogout}
