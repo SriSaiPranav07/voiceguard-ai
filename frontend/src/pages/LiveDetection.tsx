@@ -31,6 +31,7 @@ export const LiveDetection: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [frameCount, setFrameCount] = useState(0);
+  const [capturedSeconds, setCapturedSeconds] = useState(0);
   const [latencyMs, setLatencyMs] = useState(0);
   const [audioLevel, setAudioLevel] = useState(0);
   const [statusText, setStatusText] = useState('Idle');
@@ -52,6 +53,7 @@ export const LiveDetection: React.FC = () => {
   const recordingActiveRef = useRef(false);
   const analysisInFlightRef = useRef(false);
   const analysisAbortRef = useRef<AbortController | null>(null);
+  const lastCaptureUiUpdateRef = useRef(0);
   const SR = 16000;
 
   useEffect(() => { pausedRef.current = isPaused; }, [isPaused]);
@@ -89,23 +91,23 @@ export const LiveDetection: React.FC = () => {
 
   const sendBufferForAnalysis = async () => {
     if (!recordingActiveRef.current || pausedRef.current || pcmBufferRef.current.length === 0) return;
-    if (analysisInFlightRef.current) {
-      pcmBufferRef.current = [];
-      return;
-    }
+    if (analysisInFlightRef.current) return;
     const totalLen = pcmBufferRef.current.reduce((s, c) => s + c.length, 0);
-    if (totalLen < SR * 0.5) return;
+    const sampleRate = audioContextRef.current?.sampleRate ?? SR;
+    if (totalLen < sampleRate * 0.5) return;
     const merged = new Float32Array(totalLen);
     let off = 0;
     for (const c of pcmBufferRef.current) { merged.set(c, off); off += c.length; }
     pcmBufferRef.current = [];
-    const wav = encodeWAV(merged, SR);
+    // Keep the WAV header truthful. Browsers may ignore the requested 16 kHz
+    // context rate and provide 44.1/48 kHz input; the backend resamples it.
+    const wav = encodeWAV(merged, sampleRate);
     if (wav.size < 500) return;
 
     analysisInFlightRef.current = true;
     const controller = new AbortController();
     analysisAbortRef.current = controller;
-    const timeoutId = window.setTimeout(() => controller.abort(), 20000);
+    const timeoutId = window.setTimeout(() => controller.abort(), 30000);
     setIsAnalyzing(true);
     const t0 = performance.now();
     try {
@@ -136,7 +138,7 @@ export const LiveDetection: React.FC = () => {
       setIsAnalyzing(false);
       setApiConnected(false);
       setStatusText('Analysis request failed');
-      const reason = controller.signal.aborted ? 'Analysis timed out after 20 seconds.' : error instanceof Error ? error.message : 'Check the backend URL and deployment logs.';
+      const reason = controller.signal.aborted ? 'Analysis timed out after 30 seconds.' : error instanceof Error ? error.message : 'Check the backend URL and deployment logs.';
       setErrorMsg(`Could not analyze this audio window at ${apiUrl('/api/analyze-chunk')}. ${reason}`);
     } finally {
       window.clearTimeout(timeoutId);
@@ -153,11 +155,15 @@ export const LiveDetection: React.FC = () => {
         throw new Error('Microphone capture is not supported by this browser. Use a current browser over HTTPS.');
       }
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { sampleRate: { ideal: SR }, channelCount: 1, echoCancellation: true, noiseSuppression: true },
+        audio: { sampleRate: { ideal: SR }, channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
       });
       mediaStreamRef.current = stream;
       const audioCtx = new AudioContext({ sampleRate: SR });
       audioContextRef.current = audioCtx;
+      await audioCtx.resume();
+      if (audioCtx.state !== 'running') {
+        throw new Error('The browser audio engine is suspended. Click Start Live Analysis again and allow microphone access.');
+      }
       const source = audioCtx.createMediaStreamSource(stream);
       const analyser = audioCtx.createAnalyser();
       analyser.fftSize = 256;
@@ -165,16 +171,34 @@ export const LiveDetection: React.FC = () => {
       const proc = audioCtx.createScriptProcessor(4096, 1, 1);
       processorRef.current = proc;
       source.connect(proc);
-      proc.connect(audioCtx.destination);
+      // Keep the ScriptProcessorNode in the live audio graph without feeding
+      // microphone audio back through the speakers.
+      const silentOutput = audioCtx.createGain();
+      silentOutput.gain.value = 0;
+      proc.connect(silentOutput);
+      silentOutput.connect(audioCtx.destination);
       proc.onaudioprocess = (e) => {
         if (pausedRef.current) return;
         const data = e.inputBuffer.getChannelData(0);
         const copy = new Float32Array(data.length);
         copy.set(data);
         pcmBufferRef.current.push(copy);
+        const sampleRate = audioCtx.sampleRate || SR;
+        const maxBufferedSamples = sampleRate * 20;
+        let bufferedSamples = pcmBufferRef.current.reduce((sum, chunk) => sum + chunk.length, 0);
+        while (bufferedSamples > maxBufferedSamples && pcmBufferRef.current.length > 1) {
+          bufferedSamples -= pcmBufferRef.current.shift()!.length;
+        }
+        const now = performance.now();
+        if (now - lastCaptureUiUpdateRef.current > 500) {
+          lastCaptureUiUpdateRef.current = now;
+          setCapturedSeconds(bufferedSamples / sampleRate);
+        }
       };
       recordingActiveRef.current = true;
       setIsRecording(true);
+      setCapturedSeconds(0);
+      lastCaptureUiUpdateRef.current = 0;
       setStatusText('Listening — capturing audio...');
       chunkTimerRef.current = setInterval(sendBufferForAnalysis, 3000);
 
@@ -221,7 +245,9 @@ export const LiveDetection: React.FC = () => {
             ? 'Microphone permission was denied. Allow microphone access in browser settings and try again.'
             : error instanceof DOMException && error.name === 'NotReadableError'
               ? 'The microphone is already in use or unavailable.'
-              : 'Could not start microphone capture. Check browser permissions and try again.';
+              : error instanceof Error
+                ? error.message
+                : 'Could not start microphone capture. Check browser permissions and try again.';
       setErrorMsg(message);
       setIsRecording(false);
       cleanup();
@@ -243,12 +269,14 @@ export const LiveDetection: React.FC = () => {
     processorRef.current?.disconnect(); processorRef.current = null;
     mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
     audioContextRef.current?.close();
+    audioContextRef.current = null;
     pcmBufferRef.current = [];
   };
 
   const stopRecording = () => {
     cleanup(); setIsRecording(false); setIsPaused(false); pausedRef.current = false;
     setAudioLevel(0); setIsAnalyzing(false);
+    setCapturedSeconds(0);
     setStatusText('Stopped');
   };
 
@@ -365,6 +393,7 @@ export const LiveDetection: React.FC = () => {
           </span>
           <span>
             Frames: <strong>{frameCount}</strong> &nbsp;|&nbsp;
+            Buffered: <strong>{capturedSeconds.toFixed(1)}s</strong> &nbsp;|&nbsp;
             Energy: <strong>{isPaused ? 0 : audioLevel}%</strong> &nbsp;|&nbsp;
             Latency: <strong>{latencyMs > 0 ? `${latencyMs}ms` : '—'}</strong>
           </span>
