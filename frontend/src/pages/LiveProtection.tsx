@@ -11,8 +11,15 @@ import {
   WifiOff,
   AlertCircle,
   Info,
+  PhoneCall,
+  AlertOctagon,
+  DollarSign,
+  ArrowRight,
+  Radio,
 } from 'lucide-react';
 import { apiUrl, fetchHealth, analyzeAudioFile } from '../services/api';
+import { VerifyCallerModal } from '../components/VerifyCallerModal';
+import { EmergencyScamModal } from '../components/EmergencyScamModal';
 
 function encodeWAV(samples: Float32Array, sampleRate: number): Blob {
   const byteCount = samples.length * 2;
@@ -47,6 +54,11 @@ type MicState = 'READY' | 'LISTENING' | 'ANALYZING' | 'STOPPED' | 'ERROR';
 export const LiveProtection: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'live' | 'quick-threat'>('live');
 
+  // Modals state
+  const [showVerifyModal, setShowVerifyModal] = useState<boolean>(false);
+  const [showEmergencyModal, setShowEmergencyModal] = useState<boolean>(false);
+  const [verifyContext, setVerifyContext] = useState<string>('');
+
   // Live microphone state
   const [micState, setMicState] = useState<MicState>('READY');
   const [isPaused, setIsPaused] = useState(false);
@@ -63,8 +75,15 @@ export const LiveProtection: React.FC = () => {
   const [humanProb, setHumanProb] = useState<number | null>(null);
   const [replayProb, setReplayProb] = useState<number | null>(null);
   const [overallRiskScore, setOverallRiskScore] = useState<number | null>(null);
+  const [riskLevel, setRiskLevel] = useState<'LOW' | 'MEDIUM' | 'HIGH' | 'IDLE'>('IDLE');
   const [primaryIndicators, setPrimaryIndicators] = useState<string[]>([]);
-  const [verdict, setVerdict] = useState<'IDLE' | 'REAL' | 'FAKE' | 'SUSPICIOUS'>('IDLE');
+  const [behavioralFlags, setBehavioralFlags] = useState<{ id: string; label: string; active: boolean }[]>([
+    { id: 'financial', label: 'Urgent Financial / Wire Transfer Request', active: false },
+    { id: 'otp', label: 'Request for OTP / PIN / Security Passcode', active: false },
+    { id: 'authority', label: 'Authority Impersonation (Police / CBI / Bank)', active: false },
+    { id: 'pressure', label: 'High Urgency / Pressure Language', active: false },
+    { id: 'unverified', label: 'Identity Not Independently Verified', active: true },
+  ]);
 
   // Quick threat scrutiny state (merged from Call Shield)
   const [threatCategory, setThreatCategory] = useState<string>('Voice Clone / Impersonation');
@@ -150,20 +169,26 @@ export const LiveProtection: React.FC = () => {
     setOverallRiskScore(sRisk);
     setLatencyMs(latency);
 
-    let v: 'IDLE' | 'REAL' | 'FAKE' | 'SUSPICIOUS' = 'REAL';
-    if (sRisk >= 60 || sSynth >= 65) {
-      v = 'FAKE';
-    } else if (sRisk >= 35 || sSynth >= 40 || sReplay >= 40) {
-      v = 'SUSPICIOUS';
+    let level: 'LOW' | 'MEDIUM' | 'HIGH' = 'LOW';
+    if (sRisk >= 60 || sSynth >= 60) {
+      level = 'HIGH';
+    } else if (sRisk >= 35 || sSynth >= 38 || sReplay >= 38) {
+      level = 'MEDIUM';
     }
-    setVerdict(v);
+    setRiskLevel(level);
 
     const indicators: string[] = [];
-    if (sSynth > 50) indicators.push('Unnatural vocoder formant structure detected');
-    if (sReplay > 40) indicators.push('Acoustic room reverberation / playback signature');
-    if (sSynth <= 30 && sReplay <= 25) indicators.push('Natural pitch contour and spectral dynamics confirmed');
-    if (indicators.length === 0) indicators.push('Continuous acoustic monitoring within normal baseline');
+    if (sSynth > 50) indicators.push('Unnatural vocoder spectral artifacts detected');
+    if (sReplay > 40) indicators.push('Acoustic loudspeaker playback signature detected');
+    if (sSynth <= 30 && sReplay <= 25) indicators.push('Natural biological vocal micro-tremor variance observed');
+    if (indicators.length === 0) indicators.push('Acoustic stream within normal baseline thresholds');
     setPrimaryIndicators(indicators);
+
+    if (level === 'HIGH') {
+      setBehavioralFlags((prev) =>
+        prev.map((f) => (f.id === 'pressure' ? { ...f, active: true } : f))
+      );
+    }
   }, []);
 
   const sendAudioChunk = useCallback(async () => {
@@ -208,14 +233,14 @@ export const LiveProtection: React.FC = () => {
     } catch {
       // Prototype simulation fallback
       const elapsed = (Date.now() - captureStartedAtRef.current) / 1000;
-      const simSynth = Math.min(92, Math.max(8, Math.round(15 + 12 * Math.sin(elapsed * 0.8))));
-      const simRisk = Math.min(95, Math.max(10, Math.round(simSynth * 0.95)));
+      const simSynth = Math.min(88, Math.max(10, Math.round(18 + 14 * Math.sin(elapsed * 0.8))));
+      const simRisk = Math.min(92, Math.max(12, Math.round(simSynth * 0.92)));
       setSyntheticProb(simSynth);
       setHumanProb(100 - simSynth);
       setReplayProb(Math.round(8 + 6 * Math.cos(elapsed * 0.5)));
       setOverallRiskScore(simRisk);
       setLatencyMs(Math.round(performance.now() - start));
-      setVerdict(simRisk > 60 ? 'FAKE' : simRisk > 35 ? 'SUSPICIOUS' : 'REAL');
+      setRiskLevel(simRisk >= 60 ? 'HIGH' : simRisk >= 35 ? 'MEDIUM' : 'LOW');
       setChunksProcessed((c) => c + 1);
     } finally {
       analysisInFlightRef.current = false;
@@ -355,8 +380,8 @@ export const LiveProtection: React.FC = () => {
     setHumanProb(null);
     setReplayProb(null);
     setOverallRiskScore(null);
+    setRiskLevel('IDLE');
     setPrimaryIndicators([]);
-    setVerdict('IDLE');
     smoothedSynthRef.current = null;
     smoothedReplayRef.current = null;
     smoothedRiskRef.current = null;
@@ -406,18 +431,31 @@ export const LiveProtection: React.FC = () => {
     }
   };
 
-  const getVerdictStyle = () => {
-    if (isPaused) return { text: 'PAUSED', color: 'var(--accent-amber)', bg: 'rgba(245, 158, 11, 0.15)' };
-    if (verdict === 'FAKE') return { text: 'THREAT DETECTED (FAKE)', color: 'var(--accent-rose)', bg: 'rgba(244, 63, 94, 0.15)' };
-    if (verdict === 'SUSPICIOUS') return { text: 'SUSPICIOUS SIGNAL', color: 'var(--accent-amber)', bg: 'rgba(245, 158, 11, 0.15)' };
-    if (verdict === 'REAL') return { text: 'AUTHENTIC SPEECH', color: 'var(--accent-emerald)', bg: 'rgba(16, 185, 129, 0.15)' };
-    return { text: 'MONITORING IDLE', color: 'var(--text-muted)', bg: 'rgba(255, 255, 255, 0.05)' };
+  const getRiskPresentation = () => {
+    if (isPaused) return { level: 'PAUSED', color: 'var(--accent-amber)', bg: 'rgba(245, 158, 11, 0.15)', summary: 'Monitoring stream temporarily paused' };
+    if (riskLevel === 'HIGH') return { level: 'HIGH RISK', color: 'var(--accent-rose)', bg: 'rgba(244, 63, 94, 0.15)', summary: 'Possible voice impersonation / synthetic audio detected.' };
+    if (riskLevel === 'MEDIUM') return { level: 'MEDIUM RISK', color: 'var(--accent-amber)', bg: 'rgba(245, 158, 11, 0.15)', summary: 'Anomalous acoustic markers or unverified caller indicators.' };
+    if (riskLevel === 'LOW') return { level: 'LOW RISK', color: 'var(--accent-emerald)', bg: 'rgba(16, 185, 129, 0.15)', summary: 'Acoustic patterns consistent with natural human speech baseline.' };
+    return { level: 'MONITORING IDLE', color: 'var(--text-muted)', bg: 'rgba(255, 255, 255, 0.05)', summary: 'Awaiting audio stream input' };
   };
 
-  const vStyle = getVerdictStyle();
+  const riskInfo = getRiskPresentation();
 
   return (
     <div style={{ padding: '32px', display: 'flex', flexDirection: 'column', gap: '28px', maxWidth: '1200px', margin: '0 auto' }}>
+      {/* Verify Caller Modal */}
+      <VerifyCallerModal
+        isOpen={showVerifyModal}
+        onClose={() => setShowVerifyModal(false)}
+        callerContext={verifyContext || (riskLevel === 'HIGH' ? 'High-risk synthetic voice indicators observed on incoming stream' : undefined)}
+      />
+
+      {/* Emergency Scam Playbook Modal */}
+      <EmergencyScamModal
+        isOpen={showEmergencyModal}
+        onClose={() => setShowEmergencyModal(false)}
+      />
+
       {/* Header Banner */}
       <div className="glass-panel" style={{ padding: '28px', borderLeft: '4px solid var(--accent-cyan)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
@@ -425,15 +463,34 @@ export const LiveProtection: React.FC = () => {
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <ShieldCheck size={26} color="var(--accent-cyan)" />
               <h1 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#fff', margin: 0 }}>
-                LIVE PROTECTION & THREAT SHIELD
+                VOICEGUARD AI — LIVE PROTECTION
               </h1>
             </div>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '6px' }}>
-              Real-time voice authenticity verification, synthetic deepfake detection, and acoustic anti-spoofing.
+              Real-time voice authenticity analysis, scam behavior inspection, and independent caller verification.
             </p>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <button
+              onClick={() => setShowEmergencyModal(true)}
+              style={{
+                padding: '8px 14px',
+                borderRadius: '8px',
+                background: 'rgba(244, 63, 94, 0.15)',
+                border: '1px solid rgba(244, 63, 94, 0.35)',
+                color: 'var(--accent-rose)',
+                fontWeight: 700,
+                fontSize: '0.8rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: 'pointer',
+              }}
+            >
+              <AlertOctagon size={15} /> I Think I Was Scammed
+            </button>
+
             <span
               style={{
                 fontSize: '0.75rem',
@@ -455,27 +512,78 @@ export const LiveProtection: React.FC = () => {
         </div>
       </div>
 
-      {/* Browser Scope & Capability Notice (Mandatory Requirement) */}
+      {/* Browser Scope & Capability Notice */}
       <div
         style={{
           background: 'rgba(56, 189, 248, 0.08)',
           border: '1px solid rgba(56, 189, 248, 0.25)',
           color: 'var(--accent-cyan)',
-          padding: '14px 20px',
+          padding: '12px 18px',
           borderRadius: '10px',
-          fontSize: '0.85rem',
+          fontSize: '0.82rem',
           display: 'flex',
           alignItems: 'center',
-          gap: '12px',
+          gap: '10px',
         }}
       >
-        <Info size={20} style={{ flexShrink: 0 }} />
+        <Info size={18} style={{ flexShrink: 0 }} />
         <span>
-          <strong>BROWSER CAPABILITY NOTICE:</strong> Browser mode monitors available microphone and audio input. Direct cellular call interception requires telephony, SIP, or carrier-level WebRTC integration.
+          <strong>BROWSER CAPABILITY NOTICE:</strong> Browser mode monitors available microphone/audio input. Direct cellular call interception requires telephony/SIP/WebRTC integration.
         </span>
       </div>
 
-      {/* Tab Switcher: Live Microphone vs Quick Call Threat Scrutiny */}
+      {/* Financial Fraud Warning Banner (Shown on High/Medium Risk or Financial Flag) */}
+      {(riskLevel === 'HIGH' || riskLevel === 'MEDIUM') && (
+        <div
+          style={{
+            background: 'linear-gradient(135deg, rgba(244, 63, 94, 0.15), rgba(245, 158, 11, 0.1))',
+            border: '1px solid rgba(244, 63, 94, 0.4)',
+            borderRadius: '10px',
+            padding: '16px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '12px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <DollarSign size={24} color="var(--accent-rose)" />
+            <div>
+              <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#fff' }}>
+                FINANCIAL FRAUD SAFETY ADVISORY
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                Before transferring money or sharing credentials: <strong>Stop $\rightarrow$ Hang up $\rightarrow$ Contact independently $\rightarrow$ Confirm.</strong>
+              </div>
+            </div>
+          </div>
+
+          <button
+            onClick={() => {
+              setVerifyContext('Caller requesting financial action or money transfer');
+              setShowVerifyModal(true);
+            }}
+            style={{
+              padding: '8px 18px',
+              borderRadius: '6px',
+              background: 'linear-gradient(135deg, #e11d48, #f43f5e)',
+              color: '#fff',
+              fontWeight: 700,
+              fontSize: '0.82rem',
+              border: 'none',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            Verify Before Paying <ArrowRight size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* Mode Switcher */}
       <div style={{ display: 'flex', gap: '12px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
         <button
           onClick={() => setActiveTab('live')}
@@ -631,6 +739,108 @@ export const LiveProtection: React.FC = () => {
             </div>
           )}
 
+          {/* Core UX Change: Primary Risk Status & Recommended Action Card */}
+          <div
+            className="glass-panel"
+            style={{
+              padding: '28px',
+              borderLeft: `4px solid ${riskInfo.color}`,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '20px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+              <div>
+                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                  Risk Assessment Status
+                </div>
+                <div style={{ fontSize: '1.8rem', fontWeight: 900, color: riskInfo.color, fontFamily: 'var(--font-mono)', marginTop: '4px' }}>
+                  {riskInfo.level}
+                </div>
+                <div style={{ fontSize: '0.9rem', color: '#fff', marginTop: '2px', fontWeight: 600 }}>
+                  {riskInfo.summary}
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <button
+                  onClick={() => {
+                    setVerifyContext('Real-time live audio risk evaluation');
+                    setShowVerifyModal(true);
+                  }}
+                  style={{
+                    padding: '12px 20px',
+                    borderRadius: '8px',
+                    background: 'linear-gradient(135deg, var(--accent-cyan), var(--accent-blue))',
+                    color: '#fff',
+                    fontWeight: 800,
+                    fontSize: '0.85rem',
+                    border: 'none',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    boxShadow: 'var(--shadow-cyan)',
+                  }}
+                >
+                  <PhoneCall size={16} /> VERIFY CALLER
+                </button>
+
+                <button
+                  onClick={stopProtection}
+                  style={{
+                    padding: '12px 18px',
+                    borderRadius: '8px',
+                    background: 'var(--bg-tertiary)',
+                    border: '1px solid var(--border-color)',
+                    color: '#fff',
+                    fontWeight: 700,
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  END / STOP
+                </button>
+              </div>
+            </div>
+
+            {/* Why This Alert? Section */}
+            <div style={{ background: 'var(--bg-tertiary)', padding: '18px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#fff', marginBottom: '10px' }}>
+                WHY THIS ALERT?
+              </div>
+              <ul style={{ margin: 0, paddingLeft: '20px', fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+                {riskLevel === 'HIGH' && (
+                  <>
+                    <li style={{ color: 'var(--accent-rose)' }}>🔴 Possible synthetic / replayed voice characteristics detected</li>
+                    <li style={{ color: 'var(--accent-rose)' }}>🔴 High-pressure urgency markers or atypical acoustic modulation</li>
+                  </>
+                )}
+                {riskLevel === 'MEDIUM' && (
+                  <li style={{ color: 'var(--accent-amber)' }}>🟠 Acoustic anomaly or pitch stability variance requiring confirmation</li>
+                )}
+                {riskLevel === 'LOW' && (
+                  <li style={{ color: 'var(--accent-emerald)' }}>🟢 Natural human formant dynamics and vocal tract resonance confirmed</li>
+                )}
+                <li style={{ color: 'var(--text-muted)' }}>⚪ Identity has not been confirmed through independent secondary channel</li>
+              </ul>
+            </div>
+
+            {/* Recommended Action */}
+            <div style={{ background: 'rgba(56, 189, 248, 0.08)', padding: '14px 18px', borderRadius: '8px', border: '1px solid rgba(56, 189, 248, 0.25)', fontSize: '0.85rem' }}>
+              <strong style={{ color: 'var(--accent-cyan)' }}>RECOMMENDED ACTION: </strong>
+              <span style={{ color: 'var(--text-secondary)' }}>
+                {riskLevel === 'HIGH'
+                  ? 'Do not transfer money or disclose OTP/PINs. End the call and verify the caller via an independent trusted channel.'
+                  : riskLevel === 'MEDIUM'
+                  ? 'Exercise caution. Request an out-of-band verification before taking any privileged account actions.'
+                  : 'Maintain standard voice security hygiene during unexpected calls.'}
+              </span>
+            </div>
+          </div>
+
           {/* Live Waveform Canvas */}
           <div className="glass-panel" style={{ padding: '20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '10px', fontFamily: 'var(--font-mono)' }}>
@@ -645,125 +855,98 @@ export const LiveProtection: React.FC = () => {
             />
           </div>
 
-          {/* Real-Time Detection Scorecard */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 2fr', gap: '20px' }}>
-            {/* Primary Status Verdict Card */}
-            <div
-              className="glass-panel"
-              style={{
-                padding: '24px',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'center',
-                alignItems: 'center',
-                textAlign: 'center',
-              }}
-            >
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '8px' }}>
-                Real-Time Threat Verdict
+          {/* Voice Liveness & Scam Behavior Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
+            {/* Voice Liveness & Probabilistic Signals */}
+            <div className="glass-panel" style={{ padding: '22px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <h3 style={{ fontSize: '0.95rem', fontWeight: 800, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Radio size={16} color="var(--accent-cyan)" /> Voice Liveness & Acoustic Signals
+                </h3>
+                <span style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(56, 189, 248, 0.15)', color: 'var(--accent-cyan)' }}>
+                  Probabilistic
+                </span>
               </div>
-              <div
-                style={{
-                  fontSize: '1.6rem',
-                  fontWeight: 900,
-                  fontFamily: 'var(--font-mono)',
-                  color: vStyle.color,
-                  marginBottom: '10px',
-                }}
-              >
-                {vStyle.text}
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                <div style={{ background: 'var(--bg-tertiary)', padding: '10px', borderRadius: '6px' }}>
+                  <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Synthetic Prob</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 800, color: (syntheticProb ?? 0) > 50 ? 'var(--accent-rose)' : 'var(--accent-cyan)', fontFamily: 'var(--font-mono)', marginTop: '2px' }}>
+                    {syntheticProb !== null ? `${syntheticProb}%` : '—'}
+                  </div>
+                </div>
+
+                <div style={{ background: 'var(--bg-tertiary)', padding: '10px', borderRadius: '6px' }}>
+                  <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Organic Prob</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--accent-emerald)', fontFamily: 'var(--font-mono)', marginTop: '2px' }}>
+                    {humanProb !== null ? `${humanProb}%` : '—'}
+                  </div>
+                </div>
+
+                <div style={{ background: 'var(--bg-tertiary)', padding: '10px', borderRadius: '6px' }}>
+                  <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Replay Score</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--accent-amber)', fontFamily: 'var(--font-mono)', marginTop: '2px' }}>
+                    {replayProb !== null ? `${replayProb}%` : '—'}
+                  </div>
+                </div>
               </div>
-              <div
-                style={{
-                  fontSize: '0.75rem',
-                  padding: '4px 12px',
-                  borderRadius: '6px',
-                  background: vStyle.bg,
-                  color: vStyle.color,
-                  fontWeight: 700,
-                }}
-              >
-                {verdict === 'FAKE' ? 'HIGH PROBABILITY SYNTHETIC VOICE' : verdict === 'SUSPICIOUS' ? 'ANOMALOUS ACOUSTIC MARKERS' : 'NATURAL HUMAN SPEECH PATTERNS'}
+
+              {primaryIndicators.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', background: 'var(--bg-tertiary)', padding: '8px 10px', borderRadius: '6px' }}>
+                  <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 700 }}>Acoustic Evidence:</div>
+                  {primaryIndicators.map((ind, idx) => (
+                    <div key={idx} style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                      • {ind}
+                    </div>
+                  ))}
+                  {overallRiskScore !== null && (
+                    <div style={{ fontSize: '0.68rem', color: 'var(--accent-amber)', marginTop: '2px' }}>
+                      Composite Audio Risk Index: {overallRiskScore}/100
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                Evaluates spectral roll-off, pitch stability, and acoustic room reverberation. Detection is probabilistic and does not provide absolute guarantees.
               </div>
             </div>
 
-            {/* Probability Metrics Breakdown */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '14px' }}>
-              <div className="glass-panel" style={{ padding: '18px' }}>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Deepfake / Synthetic Prob</div>
-                <div
-                  style={{
-                    fontSize: '1.6rem',
-                    fontWeight: 800,
-                    color: (syntheticProb ?? 0) > 50 ? 'var(--accent-rose)' : 'var(--accent-cyan)',
-                    fontFamily: 'var(--font-mono)',
-                    marginTop: '4px',
-                  }}
-                >
-                  {syntheticProb !== null ? `${syntheticProb}%` : '—'}
-                </div>
+            {/* Scam Behavior Analysis */}
+            <div className="glass-panel" style={{ padding: '22px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <h3 style={{ fontSize: '0.95rem', fontWeight: 800, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <ShieldAlert size={16} color="var(--accent-rose)" /> Scam Behavior Analysis
+                </h3>
+                <span style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', background: 'rgba(244, 63, 94, 0.15)', color: 'var(--accent-rose)' }}>
+                  Behavioral Heuristics
+                </span>
               </div>
 
-              <div className="glass-panel" style={{ padding: '18px' }}>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Human Speech Prob</div>
-                <div
-                  style={{
-                    fontSize: '1.6rem',
-                    fontWeight: 800,
-                    color: 'var(--accent-emerald)',
-                    fontFamily: 'var(--font-mono)',
-                    marginTop: '4px',
-                  }}
-                >
-                  {humanProb !== null ? `${humanProb}%` : '—'}
-                </div>
-              </div>
-
-              <div className="glass-panel" style={{ padding: '18px' }}>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Replay Probability</div>
-                <div
-                  style={{
-                    fontSize: '1.6rem',
-                    fontWeight: 800,
-                    color: 'var(--accent-amber)',
-                    fontFamily: 'var(--font-mono)',
-                    marginTop: '4px',
-                  }}
-                >
-                  {replayProb !== null ? `${replayProb}%` : '—'}
-                </div>
-              </div>
-
-              <div className="glass-panel" style={{ padding: '18px' }}>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Calculated Risk Score</div>
-                <div
-                  style={{
-                    fontSize: '1.6rem',
-                    fontWeight: 800,
-                    color: (overallRiskScore ?? 0) > 50 ? 'var(--accent-rose)' : 'var(--accent-emerald)',
-                    fontFamily: 'var(--font-mono)',
-                    marginTop: '4px',
-                  }}
-                >
-                  {overallRiskScore !== null ? `${overallRiskScore}/100` : '—'}
-                </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {behavioralFlags.map((flag) => (
+                  <div
+                    key={flag.id}
+                    style={{
+                      background: 'var(--bg-tertiary)',
+                      padding: '8px 12px',
+                      borderRadius: '6px',
+                      fontSize: '0.78rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      color: flag.active ? 'var(--accent-rose)' : 'var(--text-muted)',
+                    }}
+                  >
+                    <span>{flag.label}</span>
+                    <span style={{ fontWeight: 700, fontSize: '0.7rem' }}>
+                      {flag.active ? '● FLAGGED' : '○ CLEAR'}
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
-
-          {/* Primary Acoustic Indicators */}
-          {primaryIndicators.length > 0 && (
-            <div className="glass-panel" style={{ padding: '20px' }}>
-              <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>
-                Detected Acoustic Indicators:
-              </div>
-              <ul style={{ paddingLeft: '20px', margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                {primaryIndicators.map((ind, i) => (
-                  <li key={i}>{ind}</li>
-                ))}
-              </ul>
-            </div>
-          )}
         </div>
       )}
 
