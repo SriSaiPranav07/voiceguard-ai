@@ -1,5 +1,5 @@
 import React from 'react';
-import { Mic, FileAudio, Shield, Globe } from 'lucide-react';
+import { Mic, FileAudio, Shield } from 'lucide-react';
 
 interface HeaderProps {
   currentView: string;
@@ -24,7 +24,6 @@ export const Header: React.FC<HeaderProps> = ({
     'live-detection': 'Real-Time Live Voice Detection',
     'call-shield': 'Call Shield Threat Intelligence',
     'audio-analysis': 'Deepfake & Synthetic Speech Analysis',
-    'multilingual': 'Multilingual Voice Intelligence (EN / TE / HI)',
     'attack-sim': 'SIH 2026 Attack Simulation & Threat Scenarios',
     'speaker-verification': 'Speaker Verification & Biometrics',
     'threat-intel': 'Global Voice Threat Feed',
@@ -58,23 +57,6 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        {/* Language Indicator */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '6px',
-          background: 'var(--bg-tertiary)',
-          border: '1px solid var(--border-color)',
-          padding: '6px 12px',
-          borderRadius: '8px',
-          fontSize: '0.8rem',
-          color: 'var(--text-secondary)'
-        }}>
-          <Globe size={14} color="var(--accent-cyan)" />
-          <span>Multilingual Engine</span>
-          <span style={{ fontSize: '0.7rem', color: 'var(--accent-cyan)', fontWeight: 700 }}>EN • TE • HI</span>
-        </div>
-
         {/* Header Action Buttons */}
         <button
           onClick={onStartLive}

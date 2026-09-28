@@ -440,7 +440,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <ShieldAlert size={18} color="var(--accent-rose)" /> Active Threat & Impersonation Incidents
               </h2>
               <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                Multilingual suspicious call analysis & voice impersonation logs
+                Suspicious call threat analysis & voice impersonation logs
               </p>
             </div>
             <button onClick={onSelectCallShield} style={{ fontSize: '0.8rem', color: 'var(--accent-cyan)', fontWeight: 600 }}>

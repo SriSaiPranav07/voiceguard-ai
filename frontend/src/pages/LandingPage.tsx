@@ -5,13 +5,11 @@ import {
   FileAudio,
   Play,
   ArrowRight,
-  Globe,
   Activity,
   Layers,
   Fingerprint,
   Radio,
   Sliders,
-  CheckCircle2,
 } from 'lucide-react';
 import { HeroWaveform } from '../components/HeroWaveform';
 
@@ -31,7 +29,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   const pipelineSteps = [
     { label: 'VOICE INPUT', icon: Mic },
     { label: 'AUDIO PREPROCESSING', icon: Sliders },
-    { label: 'LANGUAGE DETECTION', icon: Globe },
     { label: 'VOICE AUTHENTICITY', icon: Layers },
     { label: 'SPEAKER VERIFICATION', icon: Fingerprint },
     { label: 'REPLAY DETECTION', icon: Radio },
@@ -157,8 +154,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           }}
         >
           VoiceGuard AI evaluates acoustic artifacts, spectral vocoder footprints, replay signatures, and speaker
-          biometric embeddings to distinguish genuine human voices from AI-generated clones, voice conversion, and replay attacks across{' '}
-          <strong style={{ color: '#fff' }}>English, Telugu (తెలుగు) and Hindi (हिन्दी)</strong>.
+          biometric embeddings to distinguish genuine human voices from AI-generated clones, voice conversion, and replay attacks in real time.
         </p>
 
         {/* Action Buttons */}
@@ -284,50 +280,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         </div>
 
         <HeroWaveform />
-      </section>
-
-      {/* Multilingual Intelligence Section */}
-      <section style={{ maxWidth: '1200px', margin: '60px auto', padding: '0 24px' }}>
-        <div className="glass-panel" style={{ padding: '36px', textAlign: 'center' }}>
-          <h3 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '12px' }}>
-            Native Multilingual AI Speech Intelligence
-          </h3>
-          <p style={{ color: 'var(--text-secondary)', maxWidth: '650px', margin: '0 auto 24px' }}>
-            Fine-tuned acoustic feature extraction and scam threat pattern classifiers tailored for high-risk Indian regional threat landscapes:
-          </p>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px' }}>
-            <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '10px', border: '1px solid var(--border-color)', textAlign: 'left' }}>
-              <div style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--accent-cyan)' }}>English (EN)</div>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '6px' }}>
-                Corporate impersonation, CEO fraud, banking credential phishing, and executive voice spoof detection.
-              </p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '12px', fontSize: '0.75rem', color: 'var(--accent-cyan)' }}>
-                <CheckCircle2 size={14} /> Full Vocoder & Formant Analysis
-              </div>
-            </div>
-
-            <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '10px', border: '1px solid var(--border-color)', textAlign: 'left' }}>
-              <div style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--accent-emerald)' }}>Telugu (తెలుగు)</div>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '6px' }}>
-                Kidnapping & extortion scams, regional instant loan fraud, synthetic relative voice clones, and emergency money requests.
-              </p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '12px', fontSize: '0.75rem', color: 'var(--accent-emerald)' }}>
-                <CheckCircle2 size={14} /> Regional Acoustic Tone Profiling
-              </div>
-            </div>
-
-            <div style={{ background: 'var(--bg-card)', padding: '20px', borderRadius: '10px', border: '1px solid var(--border-color)', textAlign: 'left' }}>
-              <div style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--accent-amber)' }}>Hindi (हिन्दी)</div>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '6px' }}>
-                Digital arrest scams, CBI/police authority impersonation, parcel seizure extortion, and banking OTP deception.
-              </p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '12px', fontSize: '0.75rem', color: 'var(--accent-amber)' }}>
-                <CheckCircle2 size={14} /> Authority Impersonation Vectors
-              </div>
-            </div>
-          </div>
-        </div>
       </section>
     </div>
   );

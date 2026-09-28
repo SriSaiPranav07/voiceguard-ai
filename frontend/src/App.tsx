@@ -7,7 +7,6 @@ import { Dashboard } from './pages/Dashboard';
 import { LiveDetection } from './pages/LiveDetection';
 import { CallShield } from './pages/CallShield';
 import { AudioAnalysis } from './pages/AudioAnalysis';
-import { MultilingualAnalysis } from './pages/MultilingualAnalysis';
 import { Analytics } from './pages/Analytics';
 import { AIModels } from './pages/AIModels';
 import { Settings } from './pages/Settings';
@@ -114,8 +113,6 @@ export function App() {
           {currentView === 'call-shield' && <CallShield />}
 
           {currentView === 'audio-analysis' && <AudioAnalysis />}
-
-          {currentView === 'multilingual' && <MultilingualAnalysis />}
 
           {currentView === 'attack-sim' && <AttackSimulation />}
 
