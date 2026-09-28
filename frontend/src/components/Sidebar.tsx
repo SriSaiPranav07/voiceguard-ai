@@ -21,6 +21,14 @@ interface SidebarProps {
   onLogout: () => void;
 }
 
+interface NavItem {
+  id: string;
+  label: string;
+  icon: any;
+  badge?: string;
+  highlight?: boolean;
+}
+
 export const Sidebar: React.FC<SidebarProps> = ({
   currentView,
   setCurrentView,
@@ -29,15 +37,70 @@ export const Sidebar: React.FC<SidebarProps> = ({
   modelLoaded,
   onLogout,
 }) => {
-  const menuItems = [
+  const primarySection: NavItem[] = [
     { id: 'overview', label: 'Overview', icon: Activity },
     { id: 'live-protection', label: 'Live Protection', icon: ShieldCheck, badge: 'LIVE' },
     { id: 'analyze-recording', label: 'Analyze Recording', icon: FileAudio },
     { id: 'reports', label: 'Reports', icon: BarChart3 },
+  ];
+
+  const labSection: NavItem[] = [
     { id: 'demo-lab', label: 'Demo Lab', icon: FlaskConical, badge: 'SIH DEMO', highlight: true },
     { id: 'how-it-works', label: 'How It Works', icon: HelpCircle },
+  ];
+
+  const settingsSection: NavItem[] = [
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
+
+  const renderNavGroup = (items: NavItem[]) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+      {items.map((item) => {
+        const Icon = item.icon;
+        const isActive = currentView === item.id;
+        return (
+          <button
+            key={item.id}
+            onClick={() => setCurrentView(item.id)}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '11px 14px',
+              borderRadius: '8px',
+              fontSize: '0.875rem',
+              fontWeight: isActive ? 700 : 500,
+              color: isActive ? '#fff' : item.highlight ? 'var(--accent-cyan)' : 'var(--text-secondary)',
+              backgroundColor: isActive ? 'rgba(56, 189, 248, 0.14)' : 'transparent',
+              border: isActive ? '1px solid rgba(56, 189, 248, 0.35)' : '1px solid transparent',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <Icon size={18} color={isActive ? 'var(--accent-cyan)' : item.highlight ? 'var(--accent-cyan)' : 'inherit'} />
+              <span>{item.label}</span>
+            </div>
+            {item.badge && (
+              <span
+                style={{
+                  fontSize: '0.6rem',
+                  fontWeight: 700,
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  background: item.badge === 'LIVE' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(56, 189, 248, 0.2)',
+                  color: item.badge === 'LIVE' ? 'var(--accent-emerald)' : 'var(--accent-cyan)',
+                }}
+              >
+                {item.badge}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
 
   return (
     <aside
@@ -89,53 +152,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
-      {/* Navigation List */}
-      <nav style={{ flex: 1, padding: '16px 12px', overflowY: 'auto' }}>
-        {menuItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = currentView === item.id;
-          return (
-            <button
-              key={item.id}
-              onClick={() => setCurrentView(item.id)}
-              style={{
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '11px 14px',
-                marginBottom: '4px',
-                borderRadius: '8px',
-                fontSize: '0.875rem',
-                fontWeight: isActive ? 700 : 500,
-                color: isActive ? '#fff' : item.highlight ? 'var(--accent-cyan)' : 'var(--text-secondary)',
-                backgroundColor: isActive ? 'rgba(56, 189, 248, 0.14)' : 'transparent',
-                border: isActive ? '1px solid rgba(56, 189, 248, 0.35)' : '1px solid transparent',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <Icon size={18} color={isActive ? 'var(--accent-cyan)' : item.highlight ? 'var(--accent-cyan)' : 'inherit'} />
-                <span>{item.label}</span>
-              </div>
-              {item.badge && (
-                <span
-                  style={{
-                    fontSize: '0.6rem',
-                    fontWeight: 700,
-                    padding: '2px 6px',
-                    borderRadius: '4px',
-                    background: item.badge === 'LIVE' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(56, 189, 248, 0.2)',
-                    color: item.badge === 'LIVE' ? 'var(--accent-emerald)' : 'var(--accent-cyan)',
-                  }}
-                >
-                  {item.badge}
-                </span>
-              )}
-            </button>
-          );
-        })}
+      {/* Navigation List with Dividers */}
+      <nav style={{ flex: 1, padding: '16px 12px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        {renderNavGroup(primarySection)}
+
+        <div style={{ height: '1px', background: 'var(--border-color)', margin: '2px 4px' }} />
+
+        {renderNavGroup(labSection)}
+
+        <div style={{ height: '1px', background: 'var(--border-color)', margin: '2px 4px' }} />
+
+        {renderNavGroup(settingsSection)}
       </nav>
 
       {/* System Status Footer */}
